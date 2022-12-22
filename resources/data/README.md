@@ -10,6 +10,7 @@ Data set(s) are available at the following links:
 - [HOPE Dataset](https://dl.acm.org/doi/10.1145/3488560.3498509): hosted by authors with restricted ([request form link](https://docs.google.com/forms/d/e/1FAIpQLSfX_7yzABPtdo5FuhEPw8mosHJmHt|-|-3W6s4nTkL1ot7OCCiA/viewform))
 - [IEMOCAP](https://doi.org/10.1007/s10579-008-9076-6): hosted by the [Signal Analysis and Interpretation Laboratory](https://sail.usc.edu) (SAIL) of the [University of Southern California](https://www.usc.edu) (USC) ([request website link](https://sail.usc.edu/iemocap/iemocap_release.htm))
 - [Persona-Chat](https://aclanthology.org/P18-1205/): hosted by [ParlAI](https://parl.ai) ([download link](https://parl.ai/downloads/personachat/personachat.tgz))
+- [Topical-Chat](https://www.isca-speech.org/archive/interspeech_2019/gopalakrishnan19_interspeech.html): hosted via [GitHub](https://github.com/alexa/Topical-Chat)
 - [Wizard of Wikipedia](https://arxiv.org/abs/1811.01241): hosted by [ParlAI](https://parl.ai) ([download link](https://parl.ai/downloads/wizard_of_wikipedia/wizard_of_wikipedia.tgz))
 
 Directory structure:
@@ -96,6 +97,13 @@ Directory structure:
       |- personachat/
         |- test_both_original.txt
         |- test_both_revised.txt
+        |- ...
+      |- Topical-Chat-master/
+        |- conversations/
+          |- test_freq.json
+          |- test_rare.json
+          |- train.json
+          |- ...
         |- ...
       |- wizard_of_wikipedia/
         |- data.json
