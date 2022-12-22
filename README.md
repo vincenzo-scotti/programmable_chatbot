@@ -36,8 +36,7 @@ conda create -n progchat python=3.10 cudatoolkit=11.6
 # Activate anaconda environment
 conda activate progchat
 # Install packages
-conda install pytorch pytorch-cuda=11.6 -c pytorch
-conda install -c conda-forge transformers tensorboard scikit-learn matplotlib seaborn jupyterlab
+pip install requirements.txt
 ```
 
 To add the source code directory to the Python path, you can add this line to the file `~/.bashrc`
