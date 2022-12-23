@@ -519,12 +519,12 @@ class _DialogueCorpus(Dataset):
         if plaintext:
             if generator:
                 samples += self.get_dialogues('generator', False, augmentation, False)
-            if discriminator:
+            if discriminator and (self.GLOBAL_LABELS_METADATA is not None or self.LINE_LABELS_METADATA is not None):
                 samples += self.get_dialogues('discriminator', False, augmentation, False)
         if dropout:
             if generator:
                 samples += self.get_dialogues('generator', True, augmentation, dropout)
-            if discriminator:
+            if discriminator and (self.GLOBAL_LABELS_METADATA is not None or self.LINE_LABELS_METADATA is not None):
                 samples += self.get_dialogues('discriminator', True, augmentation, dropout)
 
         return samples
