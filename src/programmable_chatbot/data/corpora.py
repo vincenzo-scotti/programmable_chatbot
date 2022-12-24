@@ -30,8 +30,8 @@ from typing import Optional, Union, Tuple, List, Dict, Pattern, Literal
 
 EMO_SPEAKER: str = PLACEHOLDER_F_STRING.format('emotionalspeaker')
 EMP_LISTENER: str = PLACEHOLDER_F_STRING.format('empatheticlistener')
-PERSONA_TASK_ID: str = PLACEHOLDER_F_STRING.format('emotionalspeaker')
-PERSONA_TASK_DESCRIPTION: str = PLACEHOLDER_F_STRING.format('emotionalspeaker')
+PERSONA_1: str = PLACEHOLDER_F_STRING.format('persona1')
+PERSONA_2: str = PLACEHOLDER_F_STRING.format('persona2')
 THERAPIST: str = PLACEHOLDER_F_STRING.format('therapistspeaker')
 PATIENT: str = PLACEHOLDER_F_STRING.format('patientspeaker')
 
@@ -408,9 +408,14 @@ class PersonaChat(_DialogueCorpus):
         'persona': {
             'id': 'persona description of the speakers',
             'description': 'A persona description is a short description in a few sentences of the personal '
-                           'information of one of the speakers.'
+                           'information of one or both speakers'
         }
     }
+    P_DROP_PERSONA: float = 0.33
+    LBL_DESC_SYM: List[Tuple[str, str]] = [('', '. ')]
+    LBL_BOL_EOL_SYM: List[Tuple[str, str]] = [('', '')]
+    LBL_DESC_SYM_P: List[float] = [1.0]
+    LBL_BOL_EOL_SYM_P: List[float] = [1.0]
     # Data loading parameters
     DISTRACTORS_SPLIT_SYM = '\t\t'
     DISTRACTORS_SEPARATOR_SYM = '|'
@@ -458,7 +463,7 @@ class PersonaChat(_DialogueCorpus):
         with open(os.path.join(self.corpus_dir_path, file_name)) as f:
             dialogues = [line.split(' ', 1) for line in f.readlines()]
         idxs = [line_idx for line_idx, (i, _) in enumerate(dialogues) if int(i) == 1]
-        idxs = [(idx, idxs[idx + 1] if idx < len(idxs) else len(dialogues)) for idx in idxs]
+        idxs = [*zip(idxs, idxs[1:] + [len(dialogues)])]
         dialogues = [[elem for _, elem in dialogues[s_idx:e_idx]] for s_idx, e_idx in idxs]
         # Apply subsampling if required
         if self.sample is not None:
@@ -473,6 +478,60 @@ class PersonaChat(_DialogueCorpus):
             return Parallel(verbose=self.verbosity_level)(
                 delayed(self._preprocess_dialogue)(dialogue) for dialogue in dialogues
             )
+
+    def get_data_for_fitting(
+            self,
+            full: bool = True,
+            plaintext: bool = True,
+            dropout: bool = True,
+            augmentation: bool = True,
+            generator: bool = True,
+            discriminator: bool = True
+    ) -> List[str]:
+        return super(PersonaChat, self).get_data_for_fitting(
+            full=full, plaintext=plaintext, dropout=dropout, augmentation=augmentation, generator=generator,
+            discriminator=False
+        )
+
+    @classmethod
+    def _get_labels(
+            cls,
+            dialogue: Dict,
+            augmentation: bool,
+            global_labels_metadata: Optional[Dict[str, str]],
+            line_labels_metadata: Optional[Dict[str, str]]
+    ) -> Tuple[Optional[Dict[str, str]], Optional[List[Dict[str, str]]]]:
+        persona_descriptions = [
+            f'{PERSONA_1} persona: {dialogue["self_persona"]}', f'{PERSONA_2} persona: {dialogue["other_persona"]}'
+        ]
+        if augmentation:
+            persona_descriptions = random.sample(persona_descriptions, len(persona_descriptions))
+        if augmentation and random.uniform(0.0, 1.0) < cls.P_DROP_PERSONA:
+            persona_descriptions = random.choice(persona_descriptions)
+        else:
+            persona_descriptions = '\n'.join(persona_descriptions)
+
+        global_labels = {'persona': '\n' + persona_descriptions} if global_labels_metadata is not None else None
+        line_labels = None
+
+        return global_labels, line_labels
+
+    @classmethod
+    def _compose_dialogue_starter(
+            cls,
+            speakers: Tuple[str, str],
+            *args,
+            **kwargs
+    ) -> str:
+        sp1, sp2 = speakers
+        starter = super(PersonaChat, cls)._compose_dialogue_starter(speakers, *args, **kwargs)
+        starter = starter.replace(PERSONA_1, sp1)
+        starter = starter.replace(PERSONA_2, sp2)
+
+        if starter.endswith('..'):
+            starter = starter[:-1]
+
+        return starter
 
 
 class WizardOfWikipedia(_DialogueCorpus):
@@ -1385,12 +1444,12 @@ class Hope(_DialogueCorpus):
                 {
                     'text': self._preprocess_text(row['Utterance']),
                     'speaker': self.SPEAKER_DECODER.get(row['Type']),
-                    'dialogue_act': self.FINE_DIALOGUE_ACT_DECODER[
+                    'dialogue_act': self.FINE_DIALOGUE_ACT_DECODER.get(
                         self.ACTION_REGEX.search(str(row[dialogue_act_col])).group(1).strip()
-                    ],
-                    'dialogue_act_category': self.COARSE_DIALOGUE_ACT_DECODER[
+                    ),
+                    'dialogue_act_category': self.COARSE_DIALOGUE_ACT_DECODER.get(
                         self.ACTION_REGEX.search(str(row[dialogue_act_col])).group(1).strip()
-                    ]
+                    )
                 }
                 for _, row in df.iterrows()
             ]

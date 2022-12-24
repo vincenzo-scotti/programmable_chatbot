@@ -770,7 +770,7 @@ class _DialogueCorpus(Dataset):
             tmp_lbl_keys = list(global_labels_metadata)
             if len(global_labels_metadata) > 1:
                 global_labels_intro = f'{global_labels_intro} the ' \
-                                      f'{", the".join(global_labels_metadata[lbl]["id"] for lbl in tmp_lbl_keys[:-1])} ' \
+                                      f'{", the ".join(global_labels_metadata[lbl]["id"] for lbl in tmp_lbl_keys[:-1])} ' \
                                       f'and the {global_labels_metadata[tmp_lbl_keys[-1]]["id"]}.'
             else:
                 global_labels_intro = f'{global_labels_intro} the ' \
@@ -783,7 +783,7 @@ class _DialogueCorpus(Dataset):
             tmp_lbl_keys = list(line_labels_metadata)
             if len(line_labels_metadata) > 1:
                 line_labels_intro = f'{line_labels_intro} the ' \
-                                    f'{", the".join(line_labels_metadata[lbl]["id"] for lbl in tmp_lbl_keys[:-1])} ' \
+                                    f'{", the ".join(line_labels_metadata[lbl]["id"] for lbl in tmp_lbl_keys[:-1])} ' \
                                     f'and the {line_labels_metadata[tmp_lbl_keys[-1]]["id"]}.'
             else:
                 line_labels_intro = f'{line_labels_intro} the ' \
@@ -836,7 +836,7 @@ class _DialogueCorpus(Dataset):
                     task_suffix = cls.DISCRIMINATIVE_TASK_SUFFIX[label_type][0]
                 tmp_lbl_keys = list(tgt_labels_metadata)
                 if len(tgt_labels_metadata) > 1:
-                    task_lbls = f'the {", the".join(tgt_labels_metadata[lbl]["id"] for lbl in tmp_lbl_keys[:-1])} ' \
+                    task_lbls = f'the {", the ".join(tgt_labels_metadata[lbl]["id"] for lbl in tmp_lbl_keys[:-1])} ' \
                                 f'and the {tgt_labels_metadata[tmp_lbl_keys[-1]]["id"]}'
                 else:
                     task_lbls = f'the {tgt_labels_metadata[tmp_lbl_keys[0]]["id"]}'
@@ -1287,6 +1287,7 @@ class _DialogueCorpus(Dataset):
     @classmethod
     def _compose_dialogue_starter(
             cls,
+            speakers: Tuple[str, str],
             model_type: Literal['discriminator', 'generator'],
             augmentation: bool,
             interaction: str,
@@ -1435,7 +1436,7 @@ class _DialogueCorpus(Dataset):
             tgt_labels = tgt_global_labels
             # Data starter
             starter = cls._compose_dialogue_starter(
-                'discriminator', augmentation, interaction, global_labels=global_labels, global_labels_metadata=global_labels_metadata
+                speakers, 'discriminator', augmentation, interaction, global_labels=global_labels, global_labels_metadata=global_labels_metadata
             )
             # Classification object
             tgt_lines = None
@@ -1451,7 +1452,7 @@ class _DialogueCorpus(Dataset):
             tgt_labels = tgt_line_labels
             # Data starter
             starter = cls._compose_dialogue_starter(
-                'discriminator', augmentation, interaction, global_labels=global_labels, global_labels_metadata=global_labels_metadata
+                speakers, 'discriminator', augmentation, interaction, global_labels=global_labels, global_labels_metadata=global_labels_metadata
             )
             # Classification object
             tgt_lines = cls._get_dialogue_lines(
@@ -1615,7 +1616,7 @@ class _DialogueCorpus(Dataset):
                     tgt_labels_metadata=global_labels_metadata
                 )
                 starter = cls._compose_dialogue_starter(
-                    'generator', False, interaction, global_labels=tmp_global_labels, global_labels_metadata=global_labels_metadata
+                    speakers, 'generator', False, interaction, global_labels=tmp_global_labels, global_labels_metadata=global_labels_metadata
                 )
                 dialogue_lines = cls._get_dialogue_lines(
                     dialogue_lines,
@@ -1723,7 +1724,7 @@ class _DialogueCorpus(Dataset):
                     line_labels_metadata=line_labels_metadata,
                     tgt_labels_metadata=line_labels_metadata
                 )
-                starter = cls._compose_dialogue_starter('generator', False, interaction)  # , global_labels=global_labels)
+                starter = cls._compose_dialogue_starter(speakers, 'generator', False, interaction)  # , global_labels=global_labels)
                 dialogue_lines = cls._get_dialogue_lines(
                     dialogue_lines,
                     speakers,
@@ -1784,7 +1785,7 @@ class _DialogueCorpus(Dataset):
             line_labels_metadata=line_labels_metadata
         )
         starter = cls._compose_dialogue_starter(
-            'generator', augmentation, interaction, global_labels=global_labels, global_labels_metadata=global_labels_metadata
+            speakers, 'generator', augmentation, interaction, global_labels=global_labels, global_labels_metadata=global_labels_metadata
         )
         dialogue_lines = cls._get_dialogue_lines(
             dialogue_lines,
@@ -1826,7 +1827,7 @@ class _DialogueCorpus(Dataset):
             line_labels_metadata=line_labels_metadata,
         )
         starter = cls._compose_dialogue_starter(
-            'generator', False, interaction, global_labels=global_labels, global_labels_metadata=global_labels_metadata)
+            speakers, 'generator', False, interaction, global_labels=global_labels, global_labels_metadata=global_labels_metadata)
         dialogue_lines = cls._get_dialogue_lines(
             dialogue_lines,
             speakers,
