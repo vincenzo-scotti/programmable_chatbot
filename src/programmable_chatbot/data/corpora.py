@@ -617,7 +617,7 @@ class WizardOfWikipedia(_DialogueCorpus):
 
 class IEMOCAP(_DialogueCorpus):
     # Corpus metadata
-    CORPUS_ID: str = 'IEMOCAP_full_release'
+    IDENTIFIER: str = 'IEMOCAP_full_release'
     LINE_LABELS_METADATA: Dict[str, Dict[str, Optional[str]]] = {
         'emotion': {
             'id': 'emotion',
@@ -1177,7 +1177,7 @@ class CounsellingAndPsychotherapyCorpus(_DialogueCorpus):
         return task_description
 
 
-class Hope(_DialogueCorpus):
+class HOPE(_DialogueCorpus):
     # Corpus metadata
     IDENTIFIER = 'HOPE_WSDM_2022'
     LINE_LABELS_METADATA: Dict[str, Dict[str, Optional[str]]] = {
@@ -1603,7 +1603,7 @@ class Hope(_DialogueCorpus):
             spt, spp = speakers
         else:
             spp, spt = speakers
-        task_description = super(Hope, cls)._compose_task_description(
+        task_description = super(HOPE, cls)._compose_task_description(
             speakers, model_type, interaction, augmentation, dropout, bot,
             global_labels_metadata=global_labels_metadata, line_labels_metadata=line_labels_metadata,
             tgt_labels_metadata=tgt_labels_metadata, label_type=label_type, chunk=chunk, context=context,
@@ -1616,7 +1616,7 @@ class Hope(_DialogueCorpus):
 
 
 class CounselChat(_DialogueCorpus):
-    CORPUS_ID: str = 'Counsel_Chat'
+    IDENTIFIER: str = 'Counsel_Chat'
     # Composable strings to generate the dialogue
     INTERACTION_TYPE: List[str] = ['conversation', 'dialogue', 'chit-chat']
     CHUNK_TYPE: List[str] = ['window', 'chunk', 'piece', 'passage']
