@@ -22,7 +22,8 @@ from .utils import (
     RESPONSE,
     LABEL_ID,
     DIALOGUE_CHUNK,
-    CLS_SEP
+    CLS_SEP,
+    NULL
 )
 
 from transformers import PreTrainedTokenizer
@@ -1627,7 +1628,8 @@ class EPITOME(_DialogueCorpus):
                            'Having an emotional reaction means expressing emotions such as warmth, '
                            'compassion, and concern. Expressing these emotions plays an important role '
                            'in establishing empathic rapport and support',
-            'values': ['no communication', 'weak communication', 'strong communication']
+            'values': ['no communication', 'weak communication', 'strong communication'],
+            'explained': True
         },
         'exploration': {
             'id': 'exploration',
@@ -1635,7 +1637,8 @@ class EPITOME(_DialogueCorpus):
                            'It consists in improving understanding of the other by exploring the feelings '
                            'and experiences not directly stated. Showing an active interest in what the other '
                            'is experiencing and feeling and probing gently is another important aspect of empathy',
-            'values': ['no communication', 'weak communication', 'strong communication']
+            'values': ['no communication', 'weak communication', 'strong communication'],
+            'explained': True
         },
         'interpretation': {
             'id': 'interpretation',
@@ -1644,7 +1647,8 @@ class EPITOME(_DialogueCorpus):
                            'inferred from the interaction with the other. Such a cognitive understanding in responses '
                            'is helpful in increasing awareness of hidden feelings and experiences, '
                            'and essential for developing alliance between two interacting',
-            'values': ['no communication', 'weak communication', 'strong communication']
+            'values': ['no communication', 'weak communication', 'strong communication'],
+            'explained': True
         }
     }
     # Composable strings to generate the dialogue
@@ -1701,9 +1705,16 @@ class EPITOME(_DialogueCorpus):
         f'The {PATIENT} talks about his/hers issues to the {THERAPIST} '
         f'and the {THERAPIST} offers support to the {PATIENT}.'
     ]
-    EXTENDED_GENERATIVE_TASK_DESCRIPTION: str = 'For each of the considered communication aspects of empathy, ' \
-                                                'if present (i.e., if the communication is eather weak or strong) ,' \
-                                                'explain the rationale behind it.'
+    EXTENDED_GENERATIVE_TASK_DESCRIPTION: Dict[bool, str] = {
+        False: f'Whenever the considered aspect of empathy is present (i.e., if the communication is either '
+               f'weak or strong), explain the rationale behind it by reporting the passage(s) of the {RESPONSE} '
+               f'motivating the answer.',
+        True: f'Whenever one the considered aspects of empathy are present (i.e., if the communication is either '
+              f'weak or strong), explain the rationale behind it by reporting the passage(s) of the {RESPONSE} '
+              f'motivating the answer.'
+    }
+    EXPLANATION_PROMPT: List[str] = ['. Rationale: ', ', rationale: ', '. Passage(s): ', ', passage(s): ']
+    P_DROP_EXPLANATION = 0.3
     # IDs
     HUMAN_SPEAKER_IDS: Dict[str, List[Tuple[str, str]]] = {
         'default': [
@@ -1762,6 +1773,7 @@ class EPITOME(_DialogueCorpus):
     }
     LEVEL_DECODER = ['no communication', 'weak communication', 'strong communication']
 
+
     def _preprocess_dialogue(self, dialogue_df_row: pd.Series) -> Dict[str, Union[str, Dict[str, str]]]:
         # Pre-processed dialogue
         dialogue: Dict[str, Union[str, Dict[str, str]]] = {
@@ -1774,15 +1786,15 @@ class EPITOME(_DialogueCorpus):
                     'text': self._preprocess_text(dialogue_df_row['response_post']),
                     'emotional_reaction': self.LEVEL_DECODER[dialogue_df_row['level_er']],
                     'rationale_emotional_reaction': ', '.join(
-                        [f'"{s}"' for s in dialogue_df_row['rationales_er'].split('|') if s != '']
+                        [f'"{s}"' if s != 'N.A' else s for s in dialogue_df_row['rationales_er'].split('|') if s != '']
                     ),
                     'exploration': self.LEVEL_DECODER[dialogue_df_row['level_e']],
                     'rationale_exploration': ', '.join(
-                        [f'"{s}"' for s in dialogue_df_row['rationales_e'].split('|') if s != '']
+                        [f'"{s}"' if s != 'N.A' else s for s in dialogue_df_row['rationales_e'].split('|') if s != '']
                     ),
                     'interpretation': self.LEVEL_DECODER[dialogue_df_row['level_i']],
                     'rationale_interpretation': ', '.join(
-                        [f'"{s}"' for s in dialogue_df_row['rationales_i'].split('|') if s != '']
+                        [f'"{s}"' if s != 'N.A' else s for s in dialogue_df_row['rationales_i'].split('|') if s != '']
                     )
                 }
             ]
@@ -1801,7 +1813,7 @@ class EPITOME(_DialogueCorpus):
         df[['level_e', 'rationales_e']] = df_e[['level', 'rationales']]
         df[['level_i', 'rationales_i']] = df_i[['level', 'rationales']]
         # Clear NaNs
-        df[['rationales_er', 'rationales_e', 'rationales_i']] = df[['rationales_er', 'rationales_e', 'rationales_i']].fillna('N.A.')
+        df[['rationales_er', 'rationales_e', 'rationales_i']] = df[['rationales_er', 'rationales_e', 'rationales_i']].fillna('N.A')
         # Do train-validation-test split on the indices
         train_df, test_df = train_test_split(df, test_size=self.holdout, random_state=self.random_seed)
         train_df, validation_df = train_test_split(train_df, test_size=self.holdout, random_state=self.random_seed)
@@ -1829,24 +1841,6 @@ class EPITOME(_DialogueCorpus):
             return Parallel(verbose=self.verbosity_level)(
                 delayed(self._preprocess_dialogue)(row) for _, row in df.iterrows()
             )
-
-    def get_data_for_fitting(
-            self,
-            full: bool = True,
-            plaintext: bool = False,
-            dropout: bool = True,
-            augmentation: bool = True,
-            generator: bool = True,
-            discriminator: bool = True
-    ) -> List[str]:
-        return super(EPITOME, self).get_data_for_fitting(
-            full=full,
-            plaintext=False,
-            dropout=dropout,
-            augmentation=augmentation,
-            generator=False,
-            discriminator=discriminator
-        )
 
     @classmethod
     def _get_labels(
@@ -1897,6 +1891,15 @@ class EPITOME(_DialogueCorpus):
         speakers = (sp1, sp2) if therapist_fist else (sp2, sp1)
 
         return speakers, bot
+
+    @classmethod
+    def _prepare_labels_metadata(cls, labels_metadata: Dict, augmentation: bool, dropout: List[bool]) -> Dict:
+        labels_metadata = super(EPITOME, cls)._prepare_labels_metadata(labels_metadata, augmentation, dropout)
+        if any(dropout) and random.uniform(0.0, 1.0) < cls.P_DROP_EXPLANATION:
+            for lbl in labels_metadata:
+                labels_metadata[lbl]['explained'] = False
+
+        return labels_metadata
 
     @classmethod
     def _compose_premise(cls, speakers: Tuple[str, str], interaction: str, augmentation: bool, bot: bool) -> str:
@@ -1973,7 +1976,87 @@ class EPITOME(_DialogueCorpus):
         task_description = task_description.replace(THERAPIST, spt)
         task_description = task_description.replace(PATIENT, spp)
 
+        if model_type == 'discriminator' and tgt_labels_metadata is not None and len(tgt_labels_metadata) > 0 and all(tgt_labels_metadata[lbl]['explained'] for lbl in tgt_labels_metadata):
+            task_description += '\n' + cls.EXTENDED_GENERATIVE_TASK_DESCRIPTION[len(tgt_labels_metadata) > 1].replace(RESPONSE, response)
+
         return task_description
+
+    @classmethod
+    def _get_dialogue_labels(cls, *args, **kwargs) -> List[str]:
+        tmp_dialogue_labels = super(EPITOME, cls)._get_dialogue_labels(*args, **kwargs)
+        # Add explanations if required
+        tgt_labels_metadata = args[1]
+        if all(tgt_labels_metadata[lbl]['explained'] for lbl in tgt_labels_metadata):
+            dialogue_labels = []
+            expl_sep = random.choice(cls.EXPLANATION_PROMPT) if args[2] else cls.EXPLANATION_PROMPT[0]
+            for lbl, lbl_line in zip(tgt_labels_metadata, tmp_dialogue_labels):
+                eol = lbl_line[-2:] if lbl_line.endswith(' ') or lbl_line.endswith('\n') else lbl_line[-1:]
+                lbl_line = f'{lbl_line[:-len(eol)]}{expl_sep}{args[0][f"rationale_{lbl}"]}{eol}'
+                dialogue_labels.append(lbl_line)
+        else:
+            dialogue_labels = tmp_dialogue_labels
+
+        return dialogue_labels
+
+    @classmethod
+    def _compose_discriminator_task(cls, *args, **kwargs) -> str:
+        try:
+            return super(EPITOME, cls)._compose_discriminator_task(*args, **kwargs)
+        except TypeError:
+            return NULL
+
+    @classmethod
+    def _compose_discriminator_dialogue(cls, *args, **kwargs) -> List[str]:
+        # Drop additional dummy turn
+        return super(EPITOME, cls)._compose_discriminator_dialogue(*args, **kwargs)[1:]
+
+    @classmethod
+    def _compose_discriminator_dialogue_eval(cls, *args, **kwargs):
+        line_labels_metadata = deepcopy(kwargs['line_labels_metadata'])
+        for lbl in line_labels_metadata:
+            line_labels_metadata[lbl]['explained'] = False
+        kwargs['line_labels_metadata'] = line_labels_metadata
+        seqs = super(EPITOME, cls)._compose_discriminator_dialogue_eval(*args, **kwargs)
+        approach = args[2]
+        if approach == 'posterior':
+            seqs['passages'] = seqs['passages'][1:]
+        elif approach == 'infilling' or approach == 'prediction':
+            seqs['utterances'] = seqs['utterances'][1:]
+        else:
+            raise ValueError(f'Unknown approach requested \'{approach}\'')
+
+        return seqs
+
+    @classmethod
+    def _compose_explanation_dialogue_eval(cls, *args, **kwargs):
+        line_labels_metadata = deepcopy(kwargs['line_labels_metadata'])
+        for lbl in line_labels_metadata:
+            line_labels_metadata[lbl]['explained'] = False
+        kwargs['line_labels_metadata'] = line_labels_metadata
+        seqs = super(EPITOME, cls)._compose_discriminator_dialogue_eval(*args, **kwargs)
+        seqs['passages'] = seqs['passages'][1:]
+        tokeniser = args[3]
+        # Extend annotation or generation
+        annotations = seqs['passages'][0].pop('annotations')
+        target = seqs['passages'][0].pop('target')
+        # Get index of correct answer
+        y_true = [target in annotation for annotation in annotations].index(True)
+        # Add target string
+        seqs['passages'][0]['explanation'] = annotations[y_true].replace(
+            '.' + tokeniser.eos_token,
+            f'{cls.EXPLANATION_PROMPT[0]}{kwargs["line_labels"][-1]["rationale_{}".format(list(kwargs["line_labels_metadata"].keys())[0])]}.'
+            f'{tokeniser.eos_token}'
+        )
+
+        return seqs
+
+    @classmethod
+    def _compose_generator_dialogue_eval(cls, *args, **kwargs):
+        seqs = super(EPITOME, cls)._compose_generator_dialogue_eval(*args, **kwargs)
+        seqs['task_description'] += f'\n\n{"{} {}".format(*seqs["utterances"][0])}'
+        seqs['utterances'] = seqs['utterances'][1:]
+
+        return seqs
 
 
 class CounselChat(_DialogueCorpus):

@@ -4,6 +4,7 @@ import pickle
 import re
 import random
 from itertools import cycle, repeat
+from copy import deepcopy
 
 from joblib import Parallel
 from joblib import delayed
@@ -29,6 +30,8 @@ LABEL_DESCRIPTION: str = PLACEHOLDER_F_STRING.format('labeldescription')
 LABEL_VALUES: str = PLACEHOLDER_F_STRING.format('labelvalues')
 LABEL_VALUE: str = PLACEHOLDER_F_STRING.format('labelvalue')
 CLS_SEP: str = PLACEHOLDER_F_STRING.format('sepdiscriminator')
+
+NULL: str = PLACEHOLDER_F_STRING.format('null')
 
 
 def capitalize(s: str) -> str:
@@ -342,10 +345,11 @@ class _DialogueCorpus(Dataset):
         # Data accumulator
         data = {'generator': dict(), 'discriminator': dict()}
         # Get data for generator model
-        data['generator']['plain'] = self._compose_generator_dialogue_eval(speakers, lines, interaction)
+        data['generator']['plain'] = self._compose_generator_dialogue_eval(self.tokenizer, speakers, lines, interaction)
         if global_labels_metadata is not None or line_labels_metadata is not None:
             # Get data for conditioned generation
             data['generator']['conditioned'] = self._compose_generator_dialogue_eval(
+                self.tokenizer,
                 speakers,
                 lines,
                 interaction,
@@ -389,6 +393,29 @@ class _DialogueCorpus(Dataset):
                                 )
                                 for approach in ['posterior', 'infilling', 'prediction']
                             }
+                            if 'explanations' not in data:
+                                data['explanations'] = dict()
+                            if label_type not in data['explanations']:
+                                data['explanations'][label_type] = dict()
+                            if labels_metadata[label].get('explained', False):
+                                data['explanations'][label_type][label] = self._compose_explanation_dialogue_eval(
+                                    label_type,
+                                    label,
+                                    'posterior',
+                                    self.tokenizer,
+                                    speakers,
+                                    lines,
+                                    interaction,
+                                    chunk=chunk,
+                                    context=context,
+                                    response=response,
+                                    global_labels_metadata=tmp_global_labels_metadata,
+                                    global_labels=global_labels,
+                                    line_labels_metadata=tmp_local_labels_metadata,
+                                    line_labels=line_labels,
+                                    max_chunk_turns=self.max_chunk_turns,
+                                    max_context_turns=self.max_context_turns
+                                )
 
         return data
 
@@ -535,7 +562,7 @@ class _DialogueCorpus(Dataset):
         samples = {
             'generator': {
                 'plain': [sample['generator']['plain'] for sample in samples],
-                'conditioned': [sample['generator']['conditioned'] for sample in samples] if 'conditioned' in samples[0]['generator'] else None
+                'conditioned': [sample['generator']['conditioned'] for sample in samples] if 'conditioned' in samples[0]['generator'] else None,
             },
             'discriminator': {
                 'global': {
@@ -554,7 +581,17 @@ class _DialogueCorpus(Dataset):
                     }
                     for lbl in samples[0]['discriminator']['local']
                 } if 'local' in samples[0]['discriminator'] else None
-            }
+            },
+            'explanations': {
+                'global': {
+                    lbl: [sample['explanations']['global'][lbl] for sample in samples]
+                    for lbl in samples[0]['explanations']['global']
+                } if 'global' in samples[0]['explanations'] else None,
+                'local': {
+                    lbl: [sample['explanations']['local'][lbl] for sample in samples]
+                    for lbl in samples[0]['explanations']['local']
+                } if 'local' in samples[0]['explanations'] else None
+            } if 'explanations' in samples[0] else None
         }
 
         return samples
@@ -592,7 +629,7 @@ class _DialogueCorpus(Dataset):
 
     @classmethod
     def _prepare_labels_metadata(cls, labels_metadata: Dict, augmentation: bool, dropout: List[bool]) -> Dict:
-        labels_metadata = labels_metadata.copy()
+        labels_metadata = deepcopy(labels_metadata)
         if augmentation:
             labels_metadata = {
                 lbl: labels_metadata[lbl]
@@ -1705,7 +1742,7 @@ class _DialogueCorpus(Dataset):
                                 annotation.replace(LABEL_VALUE, value)
                                 for value in line_labels_metadata[label]['values']
                             ],
-                            'target': target[label]
+                            'target': target[label] if target is not None else NULL
                         }
                         for dialogue_passage, annotation, target in zip(dialogue_data, targets, line_labels)
                     ]
@@ -1742,7 +1779,7 @@ class _DialogueCorpus(Dataset):
                                 prompt.replace(LABEL_VALUE, value)
                                 for value in line_labels_metadata[label]['values']
                             ],
-                            'target': target[label],
+                            'target': target[label] if target is not None else NULL,
                             'text': text[len(prompt):]
                         }
                         for (_, prompt, text), target in zip(dialogue_lines, line_labels)
@@ -1754,6 +1791,10 @@ class _DialogueCorpus(Dataset):
             raise ValueError(f'Unknown label type \'{type}\'')
 
         return seqs
+
+    @classmethod
+    def _compose_explanation_dialogue_eval(cls, *args, **kwargs):
+        raise NotImplementedError()
 
     @classmethod
     def _compose_generator_dialogue(
@@ -1805,6 +1846,7 @@ class _DialogueCorpus(Dataset):
     @classmethod
     def _compose_generator_dialogue_eval(
             cls,
+            tokenizer: PreTrainedTokenizer,
             speakers: Tuple[str, str],
             dialogue_lines: List[str],
             interaction: str,
@@ -1833,7 +1875,8 @@ class _DialogueCorpus(Dataset):
             False,
             labels=line_labels,
             line_labels_metadata=line_labels_metadata,
-            split_lines=True
+            split_lines=True,
+            eos=tokenizer.eos_token
         )
         # Compose generator model input output (i.e., the utterances)
         dialogue = {
