@@ -25,6 +25,8 @@ from .utils import (
     CLS_SEP
 )
 
+from transformers import PreTrainedTokenizer
+
 from typing import Optional, Union, Tuple, List, Dict, Pattern, Literal
 
 
@@ -432,7 +434,7 @@ class PersonaChat(_DialogueCorpus):
         other_persona: List[str] = [
             elem.split(self.P_PERSONA_SYM)[-1].strip() for elem in data if elem.startswith(self.P_PERSONA_SYM)
         ]
-        # Utterances
+        # Dialogue
         dialogue: List[str] = [
             utterance for elem in data
             for utterance in elem.split(self.DISTRACTORS_SPLIT_SYM)[0].split(self.UTTERANCE_SEPARATOR_SYM)
@@ -740,7 +742,7 @@ class IEMOCAP(_DialogueCorpus):
         with open(annotation_file_path) as f:
             raw_annotations = f.read().strip()
         annotations: Dict[str, Dict[str, str]] = self._parse_annotations(raw_annotations)
-        # Pre-processed dialogue
+        # Pre-process dialogue
         dialogue: Dict[str, Union[str, Dict[str, str]]] = {
             'split': self.split,
             'corpus': 'IEMOCAP',
@@ -901,8 +903,8 @@ class CounsellingAndPsychotherapyCorpus(_DialogueCorpus):
     THERAPIST_HUMAN_PARTICIPANT: List[str] = ['a therapist', 'a counsellor', 'a mental health professional']
     PATIENT_HUMAN_PARTICIPANT: List[str] = ['a person', 'a client']
     THERAPY_BOT_PARTICIPANT: List[str] = [
-        'an AI for therapy', 'a chatbot for therapy', 'a conversational agent for therapy', 'a dialogue agent for therapy'
-        'an AI simulating a therapist', 'an AI', 'an AI system simulating a therapy patient',
+        'an AI for therapy', 'a chatbot for therapy', 'a conversational agent for therapy', 'an dialogue agent for therapy'
+        'an AI simulating a therapist', 'an AI', 'an AI system simulating a therapist',
         'an AI system', 'a chatbot simulating a therapist', 'a chatbot',
         'a conversational agent simulating a therapist', 'a conversational agent',
         'a dialogue agent simulating a therapist', 'a dialogue agent'
@@ -911,7 +913,7 @@ class CounsellingAndPsychotherapyCorpus(_DialogueCorpus):
         'an AI simulating a therapy patient', 'an AI', 'an AI system simulating a therapy patient',
         'an AI system', 'a chatbot simulating a therapy patient', 'a chatbot',
         'a conversational agent simulating a therapy patient', 'a conversational agent',
-        'a dialogue agent simulating a therapy patient', 'a dialogue agent'
+        'an dialogue agent simulating a therapy patient', 'an dialogue agent'
     ]
     DISCRIMINATIVE_TASK_PROMPT: Dict[str, List[str]] = {
         'global': [
@@ -1210,7 +1212,7 @@ class HOPE(_DialogueCorpus):
         },
     }
     # Composable strings to generate the dialogue
-    INTERACTION_TYPE: List[str] = ['conversation', 'dialogue', 'chit-chat']
+    INTERACTION_TYPE: List[str] = ['conversation', 'dialouge', 'chit-chat']
     CHUNK_TYPE: List[str] = ['window', 'chunk', 'piece', 'passage']
     CONTEXT_TYPE: List[str] = ['context', 'history', 'past']
     RESPONSE_TYPE: List[str] = ['response', 'utterance']
@@ -1231,11 +1233,11 @@ class HOPE(_DialogueCorpus):
     PATIENT_HUMAN_PARTICIPANT: List[str] = ['a person', 'a client']
     THERAPY_BOT_PARTICIPANT: List[str] = [
         'an AI for therapy', 'a chatbot for therapy', 'a conversational agent for therapy',
-        'a dialogue agent for therapy'
-        'an AI simulating a therapist', 'an AI', 'an AI system simulating a therapy patient',
+        'an dialogue agent for therapy'
+        'an AI simulating a therapist', 'an AI', 'an AI system simulating a therapist',
         'an AI system', 'a chatbot simulating a therapist', 'a chatbot',
         'a conversational agent simulating a therapist', 'a conversational agent',
-        'a dialogue agent simulating a therapist', 'a dialogue agent'
+        'an dialogue agent simulating a therapist', 'an dialogue agent'
     ]
     PATIENT_BOT_PARTICIPANT: List[str] = [
         'an AI simulating a therapy patient', 'an AI', 'an AI system simulating a therapy patient',
@@ -1615,10 +1617,369 @@ class HOPE(_DialogueCorpus):
         return task_description
 
 
-class CounselChat(_DialogueCorpus):
-    IDENTIFIER: str = 'Counsel_Chat'
+class EPITOME(_DialogueCorpus):
+    # Corpus metadata
+    IDENTIFIER = 'Empathy-Mental-Health-master'
+    LINE_LABELS_METADATA: Dict[str, Dict[str, Optional[str]]] = {
+        'emotional_reaction': {
+            'id': 'emotional reaction',
+            'description': 'Emotional reaction is a communication mechanism of empathy. '
+                           'Having an emotional reaction means expressing emotions such as warmth, '
+                           'compassion, and concern. Expressing these emotions plays an important role '
+                           'in establishing empathic rapport and support',
+            'values': ['no communication', 'weak communication', 'strong communication']
+        },
+        'exploration': {
+            'id': 'exploration',
+            'description': 'Exploration is a communication mechanism of empathy.'
+                           'It consists in improving understanding of the other by exploring the feelings '
+                           'and experiences not directly stated. Showing an active interest in what the other '
+                           'is experiencing and feeling and probing gently is another important aspect of empathy',
+            'values': ['no communication', 'weak communication', 'strong communication']
+        },
+        'interpretation': {
+            'id': 'interpretation',
+            'description': 'Interpretation is a communication mechanism of empathy. '
+                           'Interpretation consists in communicating an understanding of feelings and experiences '
+                           'inferred from the interaction with the other. Such a cognitive understanding in responses '
+                           'is helpful in increasing awareness of hidden feelings and experiences, '
+                           'and essential for developing alliance between two interacting',
+            'values': ['no communication', 'weak communication', 'strong communication']
+        }
+    }
     # Composable strings to generate the dialogue
     INTERACTION_TYPE: List[str] = ['conversation', 'dialogue', 'chit-chat']
+    CHUNK_TYPE: List[str] = ['window', 'chunk', 'piece', 'passage']
+    CONTEXT_TYPE: List[str] = ['context', 'post']
+    RESPONSE_TYPE: List[str] = ['response', 'utterance']
+    # Premise
+    PREMISE: List[str] = [
+        f'The following is an exchange of messages on an online mental health support forum between {SPEAKER_DESCRIPTIONS}.',
+        f'Here follows an exchange of messages on an online therapy forum between {SPEAKER_DESCRIPTIONS}.',
+        f'This is an exchange of messages on an online mental health support forum between {SPEAKER_DESCRIPTIONS}.',
+        f'The following is an exchange of messages on an online mental health support forum between {SPEAKER_DESCRIPTIONS}.',
+        f'Here follows an exchange of messages on an online therapy forum between {SPEAKER_DESCRIPTIONS}.',
+        f'This is an exchange of messages on an online mental health support forum between {SPEAKER_DESCRIPTIONS}.'
+    ]
+    THERAPIST_HUMAN_PARTICIPANT: List[str] = ['a therapist', 'a counsellor', 'a mental health professional', 'an empathetic listener']
+    PATIENT_HUMAN_PARTICIPANT: List[str] = ['a person', 'a client']
+    THERAPY_BOT_PARTICIPANT: List[str] = [
+        'an empathetic AI', 'an empahtetic chatbot', 'an empathetic dialogue agent'
+        'an AI for therapy', 'a chatbot for therapy', 'a conversational agent for therapy',
+        'an dialogue agent for therapy'
+        'an AI simulating a therapist', 'an AI', 'an AI system simulating a therapist',
+        'an AI system', 'a chatbot simulating a therapist', 'a chatbot',
+        'a conversational agent simulating a therapist', 'a conversational agent',
+        'an dialogue agent simulating a therapist', 'an dialogue agent'
+    ]
+    PATIENT_BOT_PARTICIPANT: List[str] = [
+        'an AI simulating a support seeking person', 'an AI', 'an AI system simulating a support seeking person',
+        'an AI system', 'a chatbot simulating a support seeking person', 'a chatbot',
+        'a conversational agent simulating a support seeking person', 'a conversational agent',
+        'a dialogue agent simulating a support seeking person', 'an dialogue agent'
+    ]
+    DISCRIMINATIVE_TASK_PROMPT: Dict[str, List[str]] = {
+        'local': [f'{LABEL_ID}{CLS_SEP}', f'{RESPONSE} {LABEL_ID}{CLS_SEP}', f'The {LABEL_ID} of the {RESPONSE} is']
+    }
+    GENERATIVE_TASK_PREFIX: List[str] = [
+        f'In the following interactions, {SPEAKERS} will converse in natural language. '
+        f'The {PATIENT} talks about his/hers issues to the {THERAPIST} '
+        f'and the {THERAPIST} offers support to the {PATIENT}.',
+        f'During these interactions, {SPEAKERS} will converse in natural language. '
+        f'The {PATIENT} talks about his/hers issues to the {THERAPIST} '
+        f'and the {THERAPIST} offers support to the {PATIENT}.',
+        f'In the following interactions, {SPEAKERS} converse in natural language. '
+        f'The {PATIENT} talks about his/hers issues to the {THERAPIST} '
+        f'and the {THERAPIST} offers support to the {PATIENT}.',
+        f'During these interactions, {SPEAKERS} converse in natural language. '
+        f'The {PATIENT} talks about his/hers issues to the {THERAPIST} '
+        f'and the {THERAPIST} offers support to the {PATIENT}.',
+        f'In the following interactions, {SPEAKERS} are conversing in natural language. '
+        f'The {PATIENT} talks about his/hers issues to the {THERAPIST} '
+        f'and the {THERAPIST} offers support to the {PATIENT}.',
+        f'During these interactions, {SPEAKERS} are conversing in natural language. '
+        f'The {PATIENT} talks about his/hers issues to the {THERAPIST} '
+        f'and the {THERAPIST} offers support to the {PATIENT}.'
+    ]
+    EXTENDED_GENERATIVE_TASK_DESCRIPTION: str = 'For each of the considered communication aspects of empathy, ' \
+                                                'if present (i.e., if the communication is eather weak or strong) ,' \
+                                                'explain the rationale behind it.'
+    # IDs
+    HUMAN_SPEAKER_IDS: Dict[str, List[Tuple[str, str]]] = {
+        'default': [
+            ('Supporter', 'User'),
+            ('Supporter', 'Client'),
+            ('Supporter', 'Person')
+        ]
+    }
+    HUMAN_THERAPY_BOT_SPEAKER_IDS: Dict[str, List[Tuple[str, str]]] = {
+        'AI': [
+            ('AI', 'Person'),
+            ('AI', 'Client'),
+            ('AI', 'User'),
+            ('Therapy AI', 'Person'),
+            ('Therapy AI', 'Client'),
+            ('Therapy AI', 'User'),
+            ('Support AI', 'Person'),
+            ('Support AI', 'Client'),
+            ('Support AI', 'User'),
+        ],
+        'chatbot': [
+            ('Chatbot', 'Person'),
+            ('Chatbot', 'Client'),
+            ('Chatbot', 'User'),
+            ('Therapy Chatbot', 'Person'),
+            ('Therapy Chatbot', 'Client'),
+            ('Therapy Chatbot', 'User'),
+            ('Support Chatbot', 'Person'),
+            ('Support Chatbot', 'Client'),
+            ('Support Chatbot', 'User')
+        ]
+    }
+    HUMAN_PATIENT_BOT_SPEAKER_IDS: Dict[str, List[Tuple[str, str]]] = {
+        'AI': [
+            ('Therapist', 'AI'),
+            ('Counsellor', 'AI'),
+            ('Therapist', 'Client AI'),
+            ('Counsellor', 'Client AI'),
+            ('Therapist', 'Patient AI'),
+            ('Counsellor', 'Patient AI')
+        ],
+        'chatbot': [
+            ('Therapist', 'Chatbot'),
+            ('Counsellor', 'Chatbot'),
+            ('Therapist', 'Client Chatbot'),
+            ('Counsellor', 'Client Chatbot'),
+            ('Therapist', 'Patient Chatbot'),
+            ('Counsellor', 'Patient Chatbot')
+        ],
+    }
+    # Data loading and preprocessing parameters
+    FILE_LIST: Dict[str, str] = {
+        'emotional-reaction': 'emotional-reactions-reddit.csv',
+        'exploration': 'explorations-reddit.csv',
+        'interpretation': 'interpretations-reddit.csv'
+    }
+    LEVEL_DECODER = ['no communication', 'weak communication', 'strong communication']
+
+    def _preprocess_dialogue(self, dialogue_df_row: pd.Series) -> Dict[str, Union[str, Dict[str, str]]]:
+        # Pre-processed dialogue
+        dialogue: Dict[str, Union[str, Dict[str, str]]] = {
+            'split': self.split,
+            'corpus': 'EPITOME',
+            'utterances': [
+                {'text': self._preprocess_text(dialogue_df_row['seeker_post']), 'speaker': 'patient'},
+                {
+                    'speaker': 'therapist',
+                    'text': self._preprocess_text(dialogue_df_row['response_post']),
+                    'emotional_reaction': self.LEVEL_DECODER[dialogue_df_row['level_er']],
+                    'rationale_emotional_reaction': ', '.join(
+                        [f'"{s}"' for s in dialogue_df_row['rationales_er'].split('|') if s != '']
+                    ),
+                    'exploration': self.LEVEL_DECODER[dialogue_df_row['level_e']],
+                    'rationale_exploration': ', '.join(
+                        [f'"{s}"' for s in dialogue_df_row['rationales_e'].split('|') if s != '']
+                    ),
+                    'interpretation': self.LEVEL_DECODER[dialogue_df_row['level_i']],
+                    'rationale_interpretation': ', '.join(
+                        [f'"{s}"' for s in dialogue_df_row['rationales_i'].split('|') if s != '']
+                    )
+                }
+            ]
+        }
+
+        return dialogue
+
+    def _load_samples(self) -> List[Dict[str, Union[str, Dict[str, str]]]]:
+        # Load CSV files
+        df_er = pd.read_csv(os.path.join(self.corpus_dir_path, 'dataset', self.FILE_LIST['emotional-reaction']))
+        df_e = pd.read_csv(os.path.join(self.corpus_dir_path, 'dataset', self.FILE_LIST['exploration']))
+        df_i = pd.read_csv(os.path.join(self.corpus_dir_path, 'dataset', self.FILE_LIST['interpretation']))
+        # Join data frames
+        df = df_er[['sp_id', 'rp_id', 'seeker_post', 'response_post']]
+        df[['level_er', 'rationales_er']] = df_er[['level', 'rationales']]
+        df[['level_e', 'rationales_e']] = df_e[['level', 'rationales']]
+        df[['level_i', 'rationales_i']] = df_i[['level', 'rationales']]
+        # Clear NaNs
+        df[['rationales_er', 'rationales_e', 'rationales_i']] = df[['rationales_er', 'rationales_e', 'rationales_i']].fillna('N.A.')
+        # Do train-validation-test split on the indices
+        train_df, test_df = train_test_split(df, test_size=self.holdout, random_state=self.random_seed)
+        train_df, validation_df = train_test_split(train_df, test_size=self.holdout, random_state=self.random_seed)
+        # Get list of current split indices
+        if self.split == 'train':
+            df = train_df
+        elif self.split == 'validation':
+            df = validation_df
+        elif self.split == 'test':
+            df = test_df
+        else:
+            raise ValueError(f'Unknown value for data set split: {self.split}')
+        # Apply subsampling if required
+        if self.sample is not None:
+            # Get number of samples to collect
+            if isinstance(self.sample, int):
+                n_samples = self.sample
+            else:
+                n_samples = int(math.ceil(self.sample * len(df)))
+            # Subsample data set unless the number of samples to take is equal to the number of samples available
+            if n_samples != len(df):
+                df = df.sample(n_samples)
+        # Standardise corpus
+        with parallel_backend(self.joblib_backend, n_jobs=self.n_jobs):
+            return Parallel(verbose=self.verbosity_level)(
+                delayed(self._preprocess_dialogue)(row) for _, row in df.iterrows()
+            )
+
+    def get_data_for_fitting(
+            self,
+            full: bool = True,
+            plaintext: bool = False,
+            dropout: bool = True,
+            augmentation: bool = True,
+            generator: bool = True,
+            discriminator: bool = True
+    ) -> List[str]:
+        return super(EPITOME, self).get_data_for_fitting(
+            full=full,
+            plaintext=False,
+            dropout=dropout,
+            augmentation=augmentation,
+            generator=False,
+            discriminator=discriminator
+        )
+
+    @classmethod
+    def _get_labels(
+            cls,
+            dialogue: Dict,
+            augmentation: bool,
+            global_labels_metadata: Optional[Dict[str, str]],
+            line_labels_metadata: Optional[Dict[str, str]]
+    ) -> Tuple[Optional[Dict[str, str]], Optional[List[Dict[str, str]]]]:
+        global_labels = None
+        if line_labels_metadata is not None and len(line_labels_metadata) > 0:
+            line_labels = [
+                None,
+                {
+                    'emotional_reaction': dialogue['utterances'][1]['emotional_reaction'],
+                    'rationale_emotional_reaction': dialogue['utterances'][1]['rationale_emotional_reaction'],
+                    'exploration': dialogue['utterances'][1]['exploration'],
+                    'rationale_exploration': dialogue['utterances'][1]['rationale_exploration'],
+                    'interpretation': dialogue['utterances'][1]['interpretation'],
+                    'rationale_interpretation': dialogue['utterances'][1]['rationale_interpretation'],
+                }
+            ]
+        else:
+            line_labels = None
+
+        return global_labels, line_labels
+
+    @classmethod
+    def _get_speakers(
+            cls, dialogue: Dict, augmentation: bool
+    ) -> Tuple[Tuple[str, str], bool]:
+        therapist_fist = dialogue['utterances'][0]['speaker'] == 'therapist'
+        if augmentation:
+            bot = random.choice([True, False])
+            if bot:
+                if random.choice([True, False]):
+                    sp1, sp2 = random.choice(
+                        cls.HUMAN_THERAPY_BOT_SPEAKER_IDS[random.choice(list(cls.HUMAN_BOT_SPEAKER_IDS))])
+                else:
+                    sp1, sp2 = random.choice(
+                        cls.HUMAN_PATIENT_BOT_SPEAKER_IDS[random.choice(list(cls.HUMAN_BOT_SPEAKER_IDS))])
+            else:
+                sp1, sp2 = random.choice(cls.HUMAN_SPEAKER_IDS[random.choice(list(cls.HUMAN_SPEAKER_IDS))])
+        else:
+            sp1, sp2 = cls.HUMAN_SPEAKER_IDS['default'][0]
+            bot = False
+
+        speakers = (sp1, sp2) if therapist_fist else (sp2, sp1)
+
+        return speakers, bot
+
+    @classmethod
+    def _compose_premise(cls, speakers: Tuple[str, str], interaction: str, augmentation: bool, bot: bool) -> str:
+        # Presentation line
+        presentation = random.choice(cls.PRESENTATION) if augmentation else cls.PRESENTATION[0]
+        # Generate speakers introduction and description
+        if speakers[0].lower() in {'patient', 'user', 'client'} or any(role in speakers[0].lower() for role in {'patient', 'user', 'client'}):
+            spp, spt = speakers
+            speaker_first = False
+        elif speakers[1].lower() in {'patient', 'user', 'client'} or any(role in speakers[1].lower() for role in {'patient', 'user', 'client'}):
+            spt, spp = speakers
+            speaker_first = True
+        elif speakers[0].lower() in {'therapist', 'counsellor'} or any(role in speakers[0].lower() for role in {'therapist', 'counsellor'}):
+            spt, spp = speakers
+            speaker_first = True
+        else:
+            spp, spt = speakers
+            speaker_first = False
+        if bot:
+            if any(spt.lower() in key.lower() or key.lower() in spt.lower() for key in
+                   cls.HUMAN_THERAPY_BOT_SPEAKER_IDS):
+                pt_list, pp_list = cls.THERAPY_BOT_PARTICIPANT, cls.PATIENT_HUMAN_PARTICIPANT
+            else:
+                pt_list, pp_list = cls.THERAPIST_HUMAN_PARTICIPANT, cls.PATIENT_BOT_PARTICIPANT
+        else:
+            pt_list, pp_list = cls.THERAPIST_HUMAN_PARTICIPANT, cls.PATIENT_HUMAN_PARTICIPANT
+        pt = random.choice(pt_list) if augmentation else pt_list[0]
+        pp = random.choice(pp_list) if augmentation else pp_list[0]
+        if speaker_first:
+            speakers_description = f'{pt}, {presentation} {spt}, and {pp}, {presentation} {spp}'
+        else:
+            speakers_description = f'{pp}, {presentation} {spp}, and {pt}, {presentation} {spt}'
+
+        # Compose premise
+        premise = random.choice(cls.PREMISE) if augmentation else cls.PREMISE[0]
+        premise = premise.replace(INTERACTION, interaction)
+        premise = premise.replace(SPEAKER_DESCRIPTIONS, speakers_description)
+        premise = premise.replace(THERAPIST, spt)
+        premise = premise.replace(PATIENT, spp)
+
+        return premise
+
+    @classmethod
+    def _compose_task_description(
+            cls,
+            speakers: Tuple[str, str],
+            model_type: Literal['generator', 'discriminator'],
+            interaction: str,
+            augmentation: bool,
+            dropout: bool,
+            bot: bool,
+            global_labels_metadata: Optional[Dict] = None,
+            line_labels_metadata: Optional[Dict] = None,
+            tgt_labels_metadata: Optional[Dict] = None,
+            label_type: Optional[Literal['global', 'local']] = None,
+            chunk: Optional[str] = None,
+            context: Optional[str] = None,
+            response: Optional[str] = None
+    ) -> str:
+        if speakers[0].lower() in {'patient', 'user', 'client'} or any(role in speakers[0].lower() for role in {'patient', 'user', 'client'}):
+            spp, spt = speakers
+        elif speakers[1].lower() in {'patient', 'user', 'client'} or any(role in speakers[1].lower() for role in {'patient', 'user', 'client'}):
+            spt, spp = speakers
+        elif speakers[0].lower() in {'therapist', 'counsellor'} or any(role in speakers[0].lower() for role in {'therapist', 'counsellor'}):
+            spt, spp = speakers
+        else:
+            spp, spt = speakers
+        task_description = super(EPITOME, cls)._compose_task_description(
+            speakers, model_type, interaction, augmentation, dropout, bot,
+            global_labels_metadata=global_labels_metadata, line_labels_metadata=line_labels_metadata,
+            tgt_labels_metadata=tgt_labels_metadata, label_type=label_type, chunk=chunk, context=context,
+            response=response
+        )
+        task_description = task_description.replace(THERAPIST, spt)
+        task_description = task_description.replace(PATIENT, spp)
+
+        return task_description
+
+
+class CounselChat(_DialogueCorpus):
+    IDENTIFIER: str = 'Counsel_Chat'
+    # Composable strings to generate the utterances
+    INTERACTION_TYPE: List[str] = ['conversation', 'utterances', 'chit-chat']
     CHUNK_TYPE: List[str] = ['window', 'chunk', 'piece', 'passage']
     CONTEXT_TYPE: List[str] = ['context', 'history', 'past']
     RESPONSE_TYPE: List[str] = ['response', 'utterance']
@@ -1636,10 +1997,10 @@ class CounselChat(_DialogueCorpus):
     THERAPY_BOT_PARTICIPANT: List[str] = [
         'an AI for therapy', 'a chatbot for therapy', 'a conversational agent for therapy',
         'a dialogue agent for therapy'
-        'an AI simulating a therapist', 'an AI', 'an AI system simulating a therapy patient',
+        'an AI simulating a therapist', 'an AI', 'an AI system simulating a therapist',
         'an AI system', 'a chatbot simulating a therapist', 'a chatbot',
         'a conversational agent simulating a therapist', 'a conversational agent',
-        'a dialogue agent simulating a therapist', 'a dialogue agent'
+        'an dialogue agent simulating a therapist', 'an dialogue agent'
     ]
     PATIENT_BOT_PARTICIPANT: List[str] = [
         'an AI simulating a therapy patient', 'an AI', 'an AI system simulating a therapy patient',

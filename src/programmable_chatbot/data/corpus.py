@@ -96,7 +96,7 @@ class PromptedOpenDomainDialogues(Dataset):
         return len(self.data)
 
     def __getitem__(self, index: int) -> str:
-        # Get dialogue from data set
+        # Get utterances from data set
         return self.data[index]
 
     def _generate_data_cache(self, corpus_kwargs, **kwargs):

@@ -51,8 +51,8 @@ class _DialogueCorpus(Dataset):
         ("\u2032", "'"),
         ("\u3001", ", ")
     ]
-    # Composable strings to generate the dialogue
-    INTERACTION_TYPE: List[str] = ['conversation', 'dialogue', 'chit-chat']
+    # Composable strings to generate the utterances
+    INTERACTION_TYPE: List[str] = ['conversation', 'utterances', 'chit-chat']
     CHUNK_TYPE: List[str] = ['window', 'chunk', 'piece', 'passage']
     CONTEXT_TYPE: List[str] = ['context', 'history', 'past']
     RESPONSE_TYPE: List[str] = ['response', 'utterance']
@@ -70,10 +70,10 @@ class _DialogueCorpus(Dataset):
     BOT_PARTICIPANT: List[str] = [
         'an intelligent AI assistant', 'an AI assistant', 'an intelligent AI system', 'an AI system', 'an AI',
         'an intelligent chatbot', 'a chatbot', 'an intelligent conversational agent', 'a conversational agent',
-        'an intelligent dialogue agent', 'a dialogue agent'
+        'an intelligent utterances agent', 'a utterances agent'
     ]
     # 'AI': ['an intelligent AI assistant', 'an AI assistant', 'an intelligent AI system', 'an AI system', 'an AI'],
-    # 'chatbot': ['an intelligent chatbot', 'a chatbot', 'an intelligent conversational agent', 'a conversational agent', 'an intelligent dialogue agent', 'a dialogue agent']
+    # 'chatbot': ['an intelligent chatbot', 'a chatbot', 'an intelligent conversational agent', 'a conversational agent', 'an intelligent utterances agent', 'a utterances agent']
     PRESENTATION: List[str] = ['called', 'namely', 'referred to as', 'hereafter referred to as']
     # Task description
     GENERATIVE_TASK_PREFIX: List[str] = [
@@ -273,7 +273,7 @@ class _DialogueCorpus(Dataset):
         self.max_chunk_turns: Optional[int] = max_chunk_turns
         # Maximum number of utterances in context
         self.max_context_turns: Optional[int] = max_context_turns
-        # Minimum number of turns per dialogue
+        # Minimum number of turns per utterances
         self.min_turns: Optional[int] = min_turns
 
         # Parallel backend
@@ -337,7 +337,7 @@ class _DialogueCorpus(Dataset):
         global_labels, line_labels = self._get_labels(
             dialogue, False, global_labels_metadata, line_labels_metadata
         )
-        # Get dialogue lines
+        # Get utterances lines
         lines = [utterance['text'] for utterance in dialogue['utterances']]
         # Data accumulator
         data = {'generator': dict(), 'discriminator': dict()}
@@ -412,11 +412,11 @@ class _DialogueCorpus(Dataset):
             )
         else:
             global_labels_metadata = line_labels_metadata = global_labels = line_labels = None
-        # Get dialogue lines
+        # Get utterances lines
         lines = [utterance['text'] for utterance in dialogue['utterances']]
         # Depending on model type generate data
         if model_type == 'generator':
-            # Prepare dialogue sequences
+            # Prepare utterances sequences
             seqs = self._compose_generator_dialogue(
                 self.tokenizer,
                 speakers,
@@ -432,7 +432,7 @@ class _DialogueCorpus(Dataset):
                 min_turns=self.min_turns
             )
         elif model_type == 'discriminator':
-            # Prepare dialogue for global labels classification
+            # Prepare utterances for global labels classification
             if global_labels_metadata is not None and len(global_labels_metadata) > 0:
                 #
                 seqs_global_labels = self._compose_discriminator_dialogue(
@@ -977,15 +977,13 @@ class _DialogueCorpus(Dataset):
             lbl_brackets: Optional[Tuple[str, str]] = None,
             split_lines: bool = False
     ) -> Union[str, Tuple[str, str, str]]:
-        assert (labels is None and line_labels_metadata is None and lbl_brackets is None) or \
-               (labels is not None and line_labels_metadata is not None and lbl_brackets is not None)
         key_id = 'id'
         if labels is not None and len(line_labels_metadata) > 0:
             lbl_l_bracket, lbl_r_bracket = lbl_brackets
             lbl = f' {lbl_l_bracket}{", ".join(f"{line_labels_metadata[lbl][key_id]}: {labels[lbl]}" for lbl in line_labels_metadata)}{lbl_r_bracket}'
         else:
             lbl = ''
-        # Compose dialogue line
+        # Compose utterances line
         dialogue_line = f'{bol}{speaker}{lbl}{sep} {line}{eol}'
         if split_lines:
             prefix = f'{bol}{speaker}'
@@ -1140,7 +1138,7 @@ class _DialogueCorpus(Dataset):
         # Get token lengths
         len_start_sep_tok = len(tokenizer('\n\n').input_ids)
         len_end_sep_tok = len(tokenizer('\n\n').input_ids)
-        # Accumulators for dialogue chunks
+        # Accumulators for utterances chunks
         chunks = []
         #
         if len(chunk_intro) > 0:
@@ -1240,7 +1238,7 @@ class _DialogueCorpus(Dataset):
         len_curr_split_tok = len_prefix_tok + len_start_sep_tok
         len_curr_split_turns = 0
         splits = ['\n\n']
-        # Loop over dialogue lines
+        # Loop over utterances lines
         for line in lines:
             # Get current line length in tokens
             len_line_tok = len(tokenizer(line).input_ids)
@@ -1266,7 +1264,7 @@ class _DialogueCorpus(Dataset):
                 # Remove tokens of latest line if it was too long
                 if len_curr_split_tok < tokenizer.model_max_length:
                     len_curr_split_tok = len_prefix_tok + len_mid_sep_tok
-        # Postprocessing (remove dialogue pieces below a certain turn-length threshold)
+        # Postprocessing (remove utterances pieces below a certain turn-length threshold)
         if len(splits) > 1 and min_turns is not None and len_curr_split_turns < min_turns:
             splits.pop(-1)
 
@@ -1501,7 +1499,7 @@ class _DialogueCorpus(Dataset):
             split_lines=True,
             sep=sep
         )
-        # Get dialogue data
+        # Get utterances data
         dialogue_data = cls._compose_data_discriminator(
             tokenizer,
             len_prefix_tok,
@@ -1582,7 +1580,7 @@ class _DialogueCorpus(Dataset):
                     False,
                     split_lines=True
                 )
-                # Get dialogue data
+                # Get utterances data
                 dialogue_data = cls._compose_data_discriminator(
                     tokenizer,
                     len_prefix_tok,
@@ -1625,7 +1623,7 @@ class _DialogueCorpus(Dataset):
                     False,
                     eos=tokenizer.eos_token
                 )
-                # Compose generator model input output (i.e., the dialogue) for discrimination
+                # Compose generator model input output (i.e., the utterances) for discrimination
                 seqs = {
                     'task_description': f'{task_description}',
                     'starter': [starter.replace(LABEL_VALUE, value) for value in global_labels_metadata[label]['values']],
@@ -1683,7 +1681,7 @@ class _DialogueCorpus(Dataset):
                     line_labels_metadata=line_labels_metadata,
                     split_lines=True
                 )
-                # Get dialogue data
+                # Get utterances data
                 dialogue_data = cls._compose_data_discriminator(
                     tokenizer,
                     len_prefix_tok,
@@ -1735,7 +1733,7 @@ class _DialogueCorpus(Dataset):
                     split_lines=True,
                     eos=tokenizer.eos_token
                 )
-                # Compose generator model input output (i.e., the dialogue) for discrimination
+                # Compose generator model input output (i.e., the utterances) for discrimination
                 seqs = {
                     'task_description': f'{task_description}{starter}',
                     'utterances': [
@@ -1799,7 +1797,7 @@ class _DialogueCorpus(Dataset):
         dialogue_splits = cls._compose_data_dialogue(
             tokenizer, dialogue_lines, len(tokenizer(f'{task_description}{starter}').input_ids), min_turns
         )
-        # Compose generator model input output (i.e., the dialogue)
+        # Compose generator model input output (i.e., the utterances)
         seqs = [f'{task_description}{starter}{dialogue_split}'.strip() for dialogue_split in dialogue_splits]
 
         return seqs
@@ -1837,7 +1835,7 @@ class _DialogueCorpus(Dataset):
             line_labels_metadata=line_labels_metadata,
             split_lines=True
         )
-        # Compose generator model input output (i.e., the dialogue)
+        # Compose generator model input output (i.e., the utterances)
         dialogue = {
             'task_description': f'{task_description}{starter}',
             'utterances': [(prompt, text[len(prompt):]) for _, prompt, text in dialogue_lines]
