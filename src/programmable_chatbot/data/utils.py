@@ -392,6 +392,7 @@ class _DialogueCorpus(Dataset):
                                     max_context_turns=self.max_context_turns
                                 )
                                 for approach in ['posterior', 'infilling', 'prediction']
+                                if not (label_type == 'global' and approach == 'prediction')
                             }
                             if 'explanations' not in data:
                                 data['explanations'] = dict()
@@ -1664,6 +1665,7 @@ class _DialogueCorpus(Dataset):
                 seqs = {
                     'task_description': f'{task_description}',
                     'starter': [starter.replace(LABEL_VALUE, value) for value in global_labels_metadata[label]['values']],
+                    'target': global_labels[label],
                     'utterances': dialogue_lines
                 }
             else:
