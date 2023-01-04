@@ -1,7 +1,6 @@
 import numpy as np
 from sklearn.metrics import classification_report
 import torch
-import torch.nn.functional as F
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
 from programmable_chatbot.utils import IGNORE_INDEX, nll
@@ -24,9 +23,7 @@ class Chatbot:
         )
         self.model = model if isinstance(model, GPT2LMHeadModel) else GPT2LMHeadModel.from_pretrained(model)
         self.model.to(device)
-        self.tokenizer = tokenizer if isinstance(tokenizer, GPT2Tokenizer) else GPT2Tokenizer.from_pretrained(
-            tokenizer if tokenizer is not None else 'gpt2', pad_token='<|endoftext|>'
-        )
+        self.tokenizer = GPT2Tokenizer.from_pretrained(tokenizer) if isinstance(tokenizer, str) else tokenizer
         self.max_response_length: Optional[int] = max_response_length
         self.mixed_precision: bool = mixed_precision
         self.in_mem: Optional[int] = in_mem
@@ -75,7 +72,7 @@ class Chatbot:
             else:
                 return score_output[0]
         #
-        with torch.no_grad, torch.autocast(self.device.type, enabled=self.mixed_precision):
+        with torch.no_grad(), torch.autocast(self.device.type, enabled=self.mixed_precision):
             # Encode input sequences
             input_encodings = self.tokenizer(sequences, return_tensors='pt', padding=True).to(self.device)
             # IDs
@@ -83,7 +80,7 @@ class Chatbot:
             # Attention mask
             attention_mask = input_encodings.attention_mask
             # Target labels (they will be shifted automatically by NLL computation)
-            labels = input_ids.copy()
+            labels = input_ids.clone()
             labels[~attention_mask.bool()] = IGNORE_INDEX
             if attention_mask is not None:
                 attention_mask = torch.hstack([past_attention_mask, attention_mask])
@@ -103,9 +100,9 @@ class Chatbot:
         task_description_encodings = self.tokenizer(f'{task_description}\n\n', return_tensors='pt').to(self.device)
         # Prepare accumulators
         attention_mask = task_description_encodings.attention_mask
-        past_key_values = self.model.transformer(**task_description_encodings)
+        past_key_values = self.model.transformer(**task_description_encodings).past_key_values
         # Parameters
-        task_description_len: int = task_description_encodings.input_ids(1)
+        task_description_len: int = task_description_encodings.input_ids.size(1)
         ellipsis_len: int = len(self.tokenizer('...\n\n').input_ids)
         utterances_len = []
         context_len = 0
@@ -133,15 +130,16 @@ class Chatbot:
                 ).to(self.device)
                 # Update past
                 attention_mask = context_encodings.attention_mask
-                past_key_values = self.model.transformer(**context_encodings)
+                past_key_values = self.model.transformer(**context_encodings).past_key_values
             # Get maximum response length
             max_response_len = self.tokenizer.model_max_length - attention_mask.size(0)
             # Target labels (they will be shifted automatically by NLL computation)
-            labels = utterance_input_ids[:, prompt_length:max_response_len].copy()
+            labels = utterance_input_ids[:, prompt_length:max_response_len].clone()
             labels[~utterance_attention_mask[:, prompt_length:max_response_len].bool()] = IGNORE_INDEX
             # Get model predictions
+            print(utterance_input_ids.size(), attention_mask.size(), utterance_attention_mask.size(), past_key_values[0][0].size())
             output = self.model(
-                input_ids=utterance_input_ids,
+                input_ids=utterance_input_ids[:max_response_len],
                 attention_mask=torch.hstack([attention_mask, utterance_attention_mask[:max_response_len]]),
                 past_key_values=past_key_values
             )
@@ -156,7 +154,7 @@ class Chatbot:
         return ppl
 
     def eval_generator(self, dialogues: List[Dict]) -> Tuple[float, int]:
-        with torch.no_grad, torch.autocast(self.device.type, enabled=self.mixed_precision):
+        with torch.no_grad(), torch.autocast(self.device.type, enabled=self.mixed_precision):
             # Compute the PPL score for each utterance of each utterances
             ppl_scores = sum(
                 [self.score_dialogue(dialogue['task_description'], dialogue['utterances']) for dialogue in dialogues],
@@ -174,7 +172,7 @@ class Chatbot:
         task_description_encodings = self.tokenizer(f'{task_description}', return_tensors='pt').to(self.device)
         # Prepare accumulators
         past_attention_mask = task_description_encodings.attention_mask
-        past_key_values = self.model.transformer(**task_description_encodings)
+        past_key_values = self.model.transformer(**task_description_encodings).past_key_values
         # Perplexity accumulator
         ppl = []
         # Iterate over utterances
@@ -188,7 +186,7 @@ class Chatbot:
             # Get maximum response length
             max_response_len = self.tokenizer.model_max_length - attention_mask.size(0)
             # Target labels (they will be shifted automatically by NLL computation)
-            labels = input_ids[:, prompt_length:max_response_len].copy()
+            labels = input_ids[:, prompt_length:max_response_len].clone()
             labels[~attention_mask[:, prompt_length:max_response_len].bool()] = IGNORE_INDEX
             # Get model predictions
             output = self.model(
@@ -205,7 +203,7 @@ class Chatbot:
         return ppl
 
     def eval_explanations(self, dialogues: List[Dict]) -> Tuple[float, int]:
-        with torch.no_grad, torch.autocast(self.device.type, enabled=self.mixed_precision):
+        with torch.no_grad(), torch.autocast(self.device.type, enabled=self.mixed_precision):
             # Compute the PPL score for each utterance of each utterances
             ppl_scores = sum(
                 [self.score_explanation(dialogue['task_description'], dialogue['passages']) for dialogue in dialogues],
@@ -230,7 +228,7 @@ class Chatbot:
         ).to(self.device)
         # Prepare accumulators
         past_attention_mask = prefix_encodings.attention_mask
-        past_key_values = self.model.transformer(**prefix_encodings)
+        past_key_values = self.model.transformer(**prefix_encodings).past_key_values
         # Target label
         try:
             if approach == 'posterior':
@@ -257,7 +255,7 @@ class Chatbot:
                     padding=True
                 ).to(self.device).values()
             # Target labels (they will be shifted automatically by NLL computation)
-            labels = input_ids.copy()
+            labels = input_ids.clone()
             labels[~attention_mask.bool()] = IGNORE_INDEX
             # Prepare past
             past = tuple(
@@ -293,7 +291,7 @@ class Chatbot:
             prefix_encodings = self.tokenizer(kwargs['task_description'], return_tensors='pt').to(self.device)
             # Prepare accumulators
             past_attention_mask = prefix_encodings.attention_mask
-            past_key_values = self.model.transformer(**prefix_encodings)
+            past_key_values = self.model.transformer(**prefix_encodings).past_key_values
             # Iterate over passages to label
             for passage in kwargs['passages']:
                 # Current logits accumulator
@@ -323,7 +321,7 @@ class Chatbot:
                         passage['annotations'][s_idx:e_idx], return_tensors='pt', padding=True
                     ).to(self.device).values()
                     # Target labels (they will be shifted automatically by NLL computation)
-                    labels = input_ids.copy()
+                    labels = input_ids.clone()
                     labels[~attention_mask.bool()] = IGNORE_INDEX
                     # Prepare past
                     past = tuple(
@@ -350,7 +348,7 @@ class Chatbot:
             prefix_encodings = self.tokenizer(kwargs['task_description'], return_tensors='pt').to(self.device)
             # Prepare accumulators
             past_attention_mask = tmp_attention_mask = prefix_encodings.attention_mask
-            past_key_values = tmp_past_key_values = self.model.transformer(**prefix_encodings)
+            past_key_values = tmp_past_key_values = self.model.transformer(**prefix_encodings).past_key_values
             # Parameters
             prefix_len: int = prefix_encodings.input_ids(1)
             ellipsis_len: int = len(self.tokenizer('...\n\n').input_ids)
@@ -386,7 +384,7 @@ class Chatbot:
                         input_ids=context_input_ids,
                         attention_mask=torch.hstack([past_key_values, context_attention_mask]),
                         past_key_values=tmp_past_key_values
-                    )
+                    ).past_key_values
                 # Get maximum response length
                 max_response_len = self.tokenizer.model_max_length - tmp_attention_mask.size(0)
                 # Update past key values
@@ -419,7 +417,7 @@ class Chatbot:
                             padding=True
                         ).to(self.device).values()
                     # Target labels (they will be shifted automatically by NLL computation)
-                    labels = input_ids.copy()
+                    labels = input_ids.clone()
                     labels[~attention_mask.bool()] = IGNORE_INDEX
                     # Prepare past
                     past = tuple(
@@ -471,7 +469,7 @@ class Chatbot:
             approach: Literal['posterior', 'infilling', 'prediction'],
             **kwargs
     ) -> Dict:
-        with torch.no_grad, torch.autocast(self.device.type, enabled=self.mixed_precision):
+        with torch.no_grad(), torch.autocast(self.device.type, enabled=self.mixed_precision):
             # Compute the target and predicted labels for each sample
             y_true, y_pred = list(zip(*[sum(
                 (self.predict_label(label_type, approach, **sample, **kwargs) for sample in samples), list()

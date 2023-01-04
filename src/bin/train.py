@@ -138,7 +138,7 @@ def init_environment(config_file_path: str):
     chatbot_configs = configs['chatbot']
     model_configs = configs['gpt2']['model']
     tokenizer_configs = configs['gpt2']['tokeniser']
-    corpus_configs = configs['data']
+    corpus_configs = configs['corpus']
     optimizer_configs = configs['optimizer']
     lr_scheduler_configs = configs.get('lr_scheduler')
     early_stopping_configs = configs.get('early_stopping')
@@ -183,6 +183,8 @@ def configure_data():
             tokenizer,
             split,
             corpus_configs['cache_dir_path'],
+            augmentation=split == 'train',
+            dropout=split == 'train',
             evaluation=split == 'test',
             device=device,
             **corpus_configs.get('kwargs', dict())
@@ -195,8 +197,8 @@ def configure_data():
             # Create data loader instance
             data_loader: DataLoader = DataLoader(
                 data_set,
-                batch_size=corpus_configs['splits'][split]['mini_batch_size'],
-                num_workers=corpus_configs['splits'][split]['n_workers'],
+                batch_size=corpus_configs['data_loader'][split]['mini_batch_size'],
+                num_workers=corpus_configs['data_loader'][split]['n_workers'],
                 shuffle=split == 'train',
                 collate_fn=data_set.collate
             )
@@ -239,10 +241,12 @@ def training_step(train_batch, loss_weight: float = 1.0, update: bool = True) ->
     max_gradient_norm = optimizer_configs.get('max_gradient_norm', 0)
     # Move tensors to device
     input_encodings, labels = train_batch
+    input_encodings = input_encodings.to(device)
+    labels = labels.to(device)
     # Process mini-batch
     with torch.autocast(device.type, enabled=mixed_precision):
         # Process current elements
-        logits = model(**input_encodings).logits
+        logits = model(**input_encodings, use_cache=checkpoint_gradient).logits
         # Compute loss
         loss = nll(logits, labels, reduction='mean')
         # Scale loss is required
@@ -287,6 +291,8 @@ def training_step(train_batch, loss_weight: float = 1.0, update: bool = True) ->
 def validation_step(validation_batch) -> torch.tensor:
     # Move tensors to device
     input_encodings, labels = validation_batch
+    input_encodings = input_encodings.to(device)
+    labels = labels.to(device)
     # Process mini-batch
     with torch.autocast(device.type, enabled=mixed_precision):
         # Process current elements
@@ -333,13 +339,15 @@ def fit():
         for b_idx, mini_batch in enumerate(train_corpus_loader):
             # Parameters
             loss_weight = 1 / n_accumulation
-            update = (b_idx + 1) % n_accumulation == 0 or b_idx == n_iterations - 1
+            training_completed = (epoch == n_epochs - 1) and (b_idx == n_iterations - 1)
+            update = (b_idx + 1) % n_accumulation == 0 or training_completed
             # Process current mini-batch
             if mini_batch_loss is None:
                 mini_batch_loss = training_step(mini_batch, loss_weight=loss_weight, update=update)
             else:
                 mini_batch_loss += training_step(mini_batch, loss_weight=loss_weight, update=update)
             logging.debug(f"Training mini-batch {b_idx + 1}/{n_iterations} processed")
+            # Check whether the model was updated
             if update:
                 # Append loss for logging
                 loss.append((step_idx + 1, mini_batch_loss))
@@ -348,40 +356,39 @@ def fit():
                 # Update step counter
                 step_idx += 1
                 logging.debug(f"Training iteration step {step_idx} done")
-            # Check if training is completed
-            training_completed = (epoch == n_epochs - 1) and (b_idx == n_iterations - 1)
-            # Log loss if required
-            if step_idx % logging_period == 0 or training_completed:
-                # Log info (iteration level) on Tensorboard
-                for iteration_idx, iteration_loss in loss:
-                    writer.add_scalar(f'Loss/Training', iteration_loss.item(), iteration_idx)
-                # Clear accumulators
-                loss.clear()
-            # Do validation step if required
-            if step_idx % validation_period == 0 or training_completed:
-                # Disable gradient computation
-                with torch.no_grad():
-                    # Set model in evaluation mode
-                    model.eval()
-                    # Log start of validation
-                    logging.info(
-                        f"Validation started - epoch {epoch + 1}/{n_epochs} mini-batch {b_idx + 1}/{n_iterations}"
-                    )
-                    # Iterate over validation mini-batches
-                    validation_loss = torch.tensor([
-                        validation_step(mini_batch) for mini_batch in validation_corpus_loader
-                    ], device=device).mean().item()
-                    # Log end of validation
-                    logging.info(
-                        f"Validation finished - epoch {epoch + 1}/{n_epochs} mini-batch {b_idx + 1}/{n_iterations}"
-                    )
-                    # Set model back in training mode
-                    model.train()
-                # Early stopping
-                if early_stopping_counter is not None and not training_completed and epoch > 0:
+                # Log loss if required
+                if step_idx % logging_period == 0 or training_completed:
+                    # Log info (iteration level) on Tensorboard
+                    for iteration_idx, iteration_loss in loss:
+                        writer.add_scalar(f'Loss/Training', iteration_loss.item(), iteration_idx)
+                    # Clear accumulators
+                    loss.clear()
+                # Do validation step if required
+                if step_idx % validation_period == 0 or training_completed:
+                    # Disable gradient computation
+                    with torch.no_grad():
+                        # Set model in evaluation mode
+                        model.eval()
+                        # Log start of validation
+                        logging.info(
+                            f"Validation started"
+                        )
+                        # Iterate over validation mini-batches
+                        validation_loss = torch.tensor([
+                            validation_step(mini_batch) for mini_batch in validation_corpus_loader
+                        ], device=device).mean().item()
+                        # Log end of validation
+                        logging.info(
+                            f"Validation finished - step {step_idx}"
+                        )
+                        #
+                        writer.add_scalar(f'Loss/Validation', validation_loss, step_idx)
+                        # Set model back in training mode
+                        model.train()
                     # Compare new current best with old best
                     if best_validation_loss - validation_loss < min_improvement:
-                        early_stopping_counter -= 1
+                        if early_stopping_counter is not None:
+                            early_stopping_counter -= 1 if epoch > 0 else 0
                     # Else if improved keep training
                     else:
                         # Update best loss
@@ -392,7 +399,7 @@ def fit():
                         # Reset counter
                         early_stopping_counter = early_stopping_patience
                     # If the counter is exhausted activate early stopping
-                    if early_stopping_counter == 0:
+                    if early_stopping_counter is not None and not training_completed and early_stopping_counter == 0:
                         # Checkpoint trained model
                         model.save_pretrained(model_checkpoint_path)
                         logging.info("Models saved using utilities")
@@ -457,7 +464,7 @@ def evaluate():
             results[data_set]['generator'] = dict()
             for approach in ['plain', 'conditioned']:
                 results[data_set]['generator'][approach] = chatbot.eval_generator(
-                    test_data[data_set]['genertor'][approach]
+                    test_data[data_set]['generator'][approach]
                 ) if test_data[data_set]['generator'].get(approach) is not None else None
             logging.debug(f"Generative model test complete")
         else:
@@ -515,7 +522,7 @@ def main(args: Namespace):
     # Prepare environment
     init_environment(args.config_file_path)
     # Run training and validation
-    fit()
+    # fit()
     # Run tests
     evaluate()
 

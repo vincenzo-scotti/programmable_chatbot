@@ -159,9 +159,17 @@ class PromptedOpenDomainDialogues(Dataset):
                 else:
                     s, l = tmp_data.pop(-1)
                     if random.choice([True, False]):
-                        tmp_data[0] = (tmp_data[0][0] + s, tmp_data[0][1] + l)
+                        if tmp_data[0][0].endswith(self.tokenizer.eos_token):
+                            conj = ('', 0)
+                        else:
+                            conj = (self.tokenizer.eos_token, 1)
+                        tmp_data[0] = (tmp_data[0][0] + conj[0] + s, tmp_data[0][1] + conj[1] + l)
                     else:
-                        tmp_data[0] = (s + tmp_data[0][0], l + tmp_data[0][1])
+                        if s.endswith(self.tokenizer.eos_token):
+                            conj = ('', 0)
+                        else:
+                            conj = (self.tokenizer.eos_token, 1)
+                        tmp_data[0] = (s + conj[0] + tmp_data[0][0], l + conj[1] + tmp_data[0][1])
             # Else if only one sample is remaining remove it
             else:
                 data.append(tmp_data.pop(0)[0])
@@ -175,7 +183,7 @@ class PromptedOpenDomainDialogues(Dataset):
 
     def collate(self, utterances: List[str]):
         # Prepare input tokens
-        input_encodings = self.tokenizer(utterances, return_tensors='pt', padding=True).to(self.device)
+        input_encodings = self.tokenizer(utterances, return_tensors='pt', padding=True, truncation=True)
         # Prepare outputs
         labels = torch.clone(input_encodings.input_ids)
         labels[~input_encodings.attention_mask.bool()] = IGNORE_INDEX

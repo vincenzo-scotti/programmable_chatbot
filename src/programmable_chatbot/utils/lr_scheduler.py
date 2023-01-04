@@ -21,7 +21,7 @@ class LinearAnnealingLR(torch.optim.lr_scheduler._LRScheduler):
         self.lr: float = optimizer.defaults['lr']
         self.steps: int = steps
         self.idx: int = 0
-        self.warmup: int = warmup if isinstance(warmup, int) else math.ceil(warmup * self.lr_steps)
+        self.warmup: int = warmup if isinstance(warmup, int) else math.ceil(warmup * self.steps)
         self.lr_values = torch.cat([
             torch.linspace(self.EPSILON, self.lr, self.warmup),
             torch.linspace(self.lr, self.EPSILON, self.steps - self.warmup)

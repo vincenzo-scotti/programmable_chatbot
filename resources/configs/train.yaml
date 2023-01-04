@@ -46,18 +46,17 @@ corpus:
       - Empathy-Mental-Health-master
     corpus_kwargs:
       Counseling_and_Psychotherapy_Transcripts_Volume_II:
-        validation_size: 50
-        test_size: 50
-data_loader:
-  train:
-    mini_batch_size: 2
-    n_workers: &train_workers 4
-  validation:
-    mini_batch_size: &eval_mini_batch_size 8
-    n_workers: &eval_workers 4
-  test:
-    mini_batch_size: *eval_mini_batch_size
-    n_workers: *eval_workers
+        holdout: 50
+  data_loader:
+    train:
+      mini_batch_size: 2
+      n_workers: &train_workers 4
+    validation:
+      mini_batch_size: &eval_mini_batch_size 8
+      n_workers: &eval_workers 4
+    test:
+      mini_batch_size: *eval_mini_batch_size
+      n_workers: *eval_workers
 # Training and evaluation
 # Optimiser
 optimizer:
