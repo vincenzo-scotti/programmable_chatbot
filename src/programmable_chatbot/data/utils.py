@@ -15,7 +15,6 @@ from transformers import PreTrainedTokenizer
 
 from typing import List, Dict, Union, Optional, Literal, Tuple
 
-IGNORE_INDEX = -1
 
 # Placeholders
 PLACEHOLDER_F_STRING: str = '<|{}|>'
@@ -570,7 +569,7 @@ class _DialogueCorpus(Dataset):
                     lbl: {
                         'posterior':  [sample['discriminator']['global'][lbl]['posterior'] for sample in samples],
                         'infilling':  [sample['discriminator']['global'][lbl]['infilling'] for sample in samples],
-                        'prediction': [sample['discriminator']['global'][lbl]['prediction'] for sample in samples]
+                        # 'prediction': [sample['discriminator']['global'][lbl]['prediction'] for sample in samples]
                     }
                     for lbl in samples[0]['discriminator']['global']
                 } if 'global' in samples[0]['discriminator'] else None,

@@ -7,7 +7,8 @@ import torch
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer, AutoTokenizer
 
-from .utils import IGNORE_INDEX, _DialogueCorpus
+from programmable_chatbot.utils import IGNORE_INDEX
+from .utils import _DialogueCorpus
 from .corpora import *
 
 from typing import List, Dict, Union
@@ -23,6 +24,7 @@ CORPORA: Dict = {
     TopicalChat.IDENTIFIER: TopicalChat,
     CounsellingAndPsychotherapyCorpus.IDENTIFIER: CounsellingAndPsychotherapyCorpus,
     HOPE.IDENTIFIER: HOPE,
+    EPITOME.IDENTIFIER: EPITOME,
     CounselChat.IDENTIFIER: CounselChat
 }
 
@@ -37,11 +39,12 @@ class PromptedOpenDomainDialogues(Dataset):
             cache_dir_path: str,
             corpus_prefix: str = 'podd',
             corpus_list: Optional[List[str]] = None,
+            evaluation: bool = False,
             device: torch.device = torch.device('cpu'),
             joblib_backend: str = 'threading',
             n_jobs: int = -1,
             verbosity_level: int = 0,
-            corpora_kwargs: Optional[Dict[str, Dict]] = None,
+            corpus_kwargs: Optional[Dict[str, Dict]] = None,
             **kwargs
     ):
         super(PromptedOpenDomainDialogues, self).__init__()
@@ -50,6 +53,8 @@ class PromptedOpenDomainDialogues(Dataset):
         self.split: Literal['train', 'validation', 'test'] = split
         # Path to cache
         self.corpus_cache_file_path: str = os.path.join(cache_dir_path, f'{corpus_prefix}_{split}.pbz2')
+
+        self.evaluation: bool = evaluation
 
         # Collating and data preparation
         # Tokeniser to prepare inputs
@@ -61,7 +66,7 @@ class PromptedOpenDomainDialogues(Dataset):
         self.device: torch.device = device
 
         # Data
-        self.data: List[str]
+        self.data: Union[List[str], ]
 
         # Generate cache if needed
         if not os.path.exists(self.corpus_cache_file_path):
@@ -86,16 +91,20 @@ class PromptedOpenDomainDialogues(Dataset):
             else:
                 self.corpus_list: List[str] = corpus_list
             # Load all corpora and generate cache
-            self._generate_data_cache(corpora_kwargs if corpora_kwargs is not None else dict(), **kwargs)
+            self._generate_data_cache(corpus_kwargs if corpus_kwargs is not None else dict(), **kwargs)
         # Otherwise simply load the cache
         else:
             self._load_data_cache()
 
     def __len__(self) -> int:
+        if self.evaluation:
+            raise ValueError('Corpus loaded in evaluation mode')
         # Number of sequences within the data set
         return len(self.data)
 
     def __getitem__(self, index: int) -> str:
+        if self.evaluation:
+            raise ValueError('Corpus loaded in evaluation mode')
         # Get utterances from data set
         return self.data[index]
 
@@ -114,14 +123,19 @@ class PromptedOpenDomainDialogues(Dataset):
             )
             for corpus_id in self.corpus_list
         ]
-        # Gather samples
-        with parallel_backend(self.joblib_backend, n_jobs=self.n_jobs):
-            data = sum(Parallel(verbose=self.verbosity_level)(
-                delayed(corpus.get_data_for_fitting)() for corpus in corpora
-            ), list())
+        if self.evaluation:
+            self.data = {
+                corpus.IDENTIFIER: corpus.get_data_for_evaluation() for corpus in corpora
+            }
+        else:
+            # Gather samples
+            with parallel_backend(self.joblib_backend, n_jobs=self.n_jobs):
+                data = sum(Parallel(verbose=self.verbosity_level)(
+                    delayed(corpus.get_data_for_fitting)() for corpus in corpora
+                ), list())
 
-        # Merge together short sequences
-        self.data = self._postprocess(data)
+            # Merge together short sequences
+            self.data = self._postprocess(data)
 
         # Save compressed pickle file with data set
         with bz2.BZ2File(self.corpus_cache_file_path, 'w') as f:

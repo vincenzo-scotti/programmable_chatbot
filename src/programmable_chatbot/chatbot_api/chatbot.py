@@ -1,12 +1,10 @@
-from itertools import product
-
 import numpy as np
 from sklearn.metrics import classification_report
 import torch
 import torch.nn.functional as F
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
-from programmable_chatbot.data.utils import IGNORE_INDEX
+from programmable_chatbot.utils import IGNORE_INDEX, nll
 
 from typing import Optional, Union, List, Literal, Tuple, Dict
 
@@ -18,9 +16,9 @@ class Chatbot:
             tokenizer: Optional[Union[str, GPT2Tokenizer]] = None,
             max_response_length: Optional[int] = None,
             device: Optional[torch.device] = None,
-            mixed_precision: bool = True
+            mixed_precision: bool = True,
+            in_mem: Optional[int] = None
     ):
-        ...
         self.device: torch.device = device if device is not None else (
             torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
         )
@@ -31,6 +29,7 @@ class Chatbot:
         )
         self.max_response_length: Optional[int] = max_response_length
         self.mixed_precision: bool = mixed_precision
+        self.in_mem: Optional[int] = in_mem
 
     def __call__(self, *args, **kwargs):
         ...
@@ -50,53 +49,7 @@ class Chatbot:
             labels,
             reduction: Optional[Literal['mean', 'sum', 'batchmean', 'batchsum', 'seqmean', 'seqsum']] = None
     ) -> torch.tensor:
-        # Shift left labels
-        shift_labels: torch.tensor = labels[..., 1:].contiguous()
-        # Shift right logits
-        shift_logits: torch.tensor = logits[..., :-1, :].contiguous()
-
-        # Compute element-wise loss
-        loss: torch.tensor = F.cross_entropy(
-            shift_logits.view(-1, shift_logits.size(-1)),
-            shift_labels.view(-1),
-            reduction='none',
-            ignore_index=IGNORE_INDEX
-        ).view(shift_labels.size())
-        # Apply reduction if required
-        if reduction is not None:
-            # Compute loss reduction depending on the required approach
-            if reduction == 'mean':
-                # Get number of tokens
-                n_tokens: torch.tensor = (shift_labels != IGNORE_INDEX).float().sum()
-                # Apply reduction
-                loss = loss.sum() / n_tokens
-            elif reduction == 'sum':
-                # Apply reduction
-                loss = loss.sum()
-            elif reduction == 'batchmean':
-                # Get number of tokens
-                n_tokens: torch.tensor = (shift_labels != IGNORE_INDEX).float().sum(1)
-                # Apply reduction
-                loss = loss.sum(1) / n_tokens
-                loss = loss.mean()
-            elif reduction == 'batchsum':
-                # Get number of tokens
-                n_tokens: torch.tensor = (shift_labels != IGNORE_INDEX).float().sum(1)
-                # Apply reduction
-                loss = loss.sum(1) / n_tokens
-                loss = loss.sum()
-            elif reduction == 'seqmean':
-                # Get number of tokens
-                n_tokens: torch.tensor = (shift_labels != IGNORE_INDEX).float().sum(1)
-                # Apply reduction
-                loss = loss.sum(1) / n_tokens
-            elif reduction == 'seqsum':
-                # Apply reduction
-                loss = loss.sum(1)
-            else:
-                raise ValueError(f'Unsupported reduction approach: \'{reduction}\'')
-
-        return loss
+        return nll(logits, labels, reduction=reduction)
 
     def score(
             self,
@@ -287,7 +240,7 @@ class Chatbot:
         except ValueError:
             y_true = -1
         # Get in memory elements
-        in_mem = kwargs.get('in_mem', len(kwargs['annotations' if approach == 'posterior' else 'starter']))
+        in_mem = self.in_mem if self.in_mem is not None else len(kwargs['annotations' if approach == 'posterior' else 'starter'])
         # Iterate over batches of annotations
         for s_idx in range(0, len(kwargs['annotations' if approach == 'posterior' else 'starter']), in_mem):
             # Get last index
@@ -360,7 +313,7 @@ class Chatbot:
                 except ValueError:
                     y_true.append(-1)
                 # Get in memory elements
-                in_mem = kwargs.get('in_mem', len(passage['annotations']))
+                in_mem = self.in_mem if self.in_mem is not None else len(passage['annotations'])
                 # Iterate over batches of annotations
                 for s_idx in range(0, len(passage['annotations']), in_mem):
                     # Get last index
@@ -449,7 +402,7 @@ class Chatbot:
                 except ValueError:
                     y_true.append(-1)
                 # Get in memory elements
-                in_mem = kwargs.get('in_mem', len(utterance['prompts']))
+                in_mem = self.in_mem if self.in_mem is not None else len(utterance['prompts'])
                 # Iterate over batches of annotations
                 for s_idx in range(0, len(utterance['prompts']), in_mem):
                     # Get last index
@@ -515,12 +468,13 @@ class Chatbot:
             self,
             samples: List[Dict],
             label_type: Literal['global', 'local'],
-            approach: Literal['posterior', 'infilling', 'prediction']
+            approach: Literal['posterior', 'infilling', 'prediction'],
+            **kwargs
     ) -> Dict:
         with torch.no_grad, torch.autocast(self.device.type, enabled=self.mixed_precision):
             # Compute the target and predicted labels for each sample
             y_true, y_pred = list(zip(*[sum(
-                (self.predict_label(label_type, approach, **sample) for sample in samples), list()
+                (self.predict_label(label_type, approach, **sample, **kwargs) for sample in samples), list()
             )]))
 
         return classification_report(y_true, y_pred, output_dict=True)

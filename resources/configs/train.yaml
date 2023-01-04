@@ -1,0 +1,79 @@
+# Main
+experiment_series: PROGCHAT
+experiment_id: gpt2_large  # gpt2_[distilled|small|medium|large]
+experiments_directory_path: ./experiments/
+
+random_seed: 2307
+# device: cuda  # Defaults to CUDA device if available
+mixed_precision: true  # Used only with CUDA devices
+checkpoint_gradient: true  # To be used with large model
+
+log_level: INFO
+log_file: true
+
+# Chatbot
+# Neural LM
+gpt2:
+  model:
+    pretrained: &pretrained gpt2-large
+  tokeniser:
+    pretrained: *pretrained
+    kwargs:
+      pad_token: <|endoftext|>
+# API
+chatbot:
+  kwargs:
+    in_mem: 8
+  generate_kwargs: {}
+# Data set
+corpus:
+  corpora_dir_path: ./resources/data/raw/
+  cache_dir_path: ./resources/data/cache/
+  kwargs:
+    max_chunk_turns: 8
+    max_context_turns: 3
+    min_turns: 3
+    corpus_list:
+      - dailydialog
+      - empatheticdialogues
+      - personachat
+      - wizard_of_wikipedia
+      - IEMOCAP_full_release
+      - Topical-Chat-master
+      - Counseling_and_Psychotherapy_Transcripts_Volume_II
+      - HOPE_WSDM_2022
+      - Counsel_Chat
+      - Empathy-Mental-Health-master
+    corpus_kwargs:
+      Counseling_and_Psychotherapy_Transcripts_Volume_II:
+        validation_size: 50
+        test_size: 50
+data_loader:
+  train:
+    mini_batch_size: 2
+    n_workers: &train_workers 4
+  validation:
+    mini_batch_size: &eval_mini_batch_size 8
+    n_workers: &eval_workers 4
+  test:
+    mini_batch_size: *eval_mini_batch_size
+    n_workers: *eval_workers
+# Training and evaluation
+# Optimiser
+optimizer:
+  kwargs:
+    lr: 1.e-5
+  n_epochs: 3
+  accumulation_steps: 16
+  max_gradient_norm: 1.0
+# LR scheduler
+lr_scheduler:
+  warmup: 0.05
+# Early stopping
+early_stopping:
+  patience: 8
+  min_improvement: 1.e-3
+# Evaluation
+evaluation:
+  validation_period: 2048
+  logging_period: 16
