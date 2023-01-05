@@ -1,4 +1,4 @@
-import random
+import logging
 
 import bz2
 import pickle
@@ -110,6 +110,7 @@ class PromptedOpenDomainDialogues(Dataset):
 
     def _generate_data_cache(self, corpus_kwargs, **kwargs):
         # Create corpora instances
+        logging.debug('Data loading started')
         corpora: List[_DialogueCorpus] = [
             CORPORA[corpus_id](
                 os.path.join(self.corpora_dir_path, corpus_id),
@@ -123,6 +124,8 @@ class PromptedOpenDomainDialogues(Dataset):
             )
             for corpus_id in self.corpus_list
         ]
+        logging.debug('Data loading completed')
+        logging.debug('Data preparation started')
         if self.evaluation:
             self.data = {
                 corpus.IDENTIFIER: corpus.get_data_for_evaluation() for corpus in corpora
@@ -136,12 +139,14 @@ class PromptedOpenDomainDialogues(Dataset):
 
             # Merge together short sequences
             self.data = self._postprocess(data)
+        logging.debug('Data preparation completed')
 
         # Save compressed pickle file with data set
         with bz2.BZ2File(self.corpus_cache_file_path, 'w') as f:
             pickle.dump(self.data, f)
 
     def _postprocess(self, data: List[str]):
+        logging.debug('Data sequence postprocessing started')
         # Compute the length in tokens of all sequences
         with parallel_backend(self.joblib_backend, n_jobs=self.n_jobs):
             tmp_data = sorted(Parallel(verbose=self.verbosity_level)(
@@ -173,6 +178,7 @@ class PromptedOpenDomainDialogues(Dataset):
             # Else if only one sample is remaining remove it
             else:
                 data.append(tmp_data.pop(0)[0])
+        logging.debug('Data sequence postprocessing completed')
 
         return data
 

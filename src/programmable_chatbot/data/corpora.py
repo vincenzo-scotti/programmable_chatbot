@@ -667,7 +667,7 @@ class IEMOCAP(_DialogueCorpus):
     }
     # Data loading and preprocessing parameters
     LINE_REGEX: Pattern[str] = re.compile(
-        r'^((Ses(\d+)[MF]_(impro|script)\d+(_\d)?)_([MF])\d+) \[\d{3}\.\d{4}-\d{3}\.\d{4}\]: (.+)$'
+        r'^((Ses(\d+)[MF]_(impro|script)\d+(_?\d\d*\w*)?)_([MF])\d+) \[\d{3}\.\d{4}-\d{3}\.\d{4}\]: (.+)$'
     )
     ANNOTATION_REGEX: Pattern[str] = re.compile(
         r'^\[\d+\.\d+ - \d+\.\d+]\t(\w+)\t(\w+)\t\[(\d\.\d+), (\d\.\d+), (\d\.\d+)]$'
@@ -743,6 +743,9 @@ class IEMOCAP(_DialogueCorpus):
         with open(annotation_file_path) as f:
             raw_annotations = f.read().strip()
         annotations: Dict[str, Dict[str, str]] = self._parse_annotations(raw_annotations)
+
+        assert len(dialogue) == len(annotations), f'\'{text_file_path}\' \'{annotation_file_path}\''
+
         # Pre-process dialogue
         dialogue: Dict[str, Union[str, Dict[str, str]]] = {
             'split': self.split,
