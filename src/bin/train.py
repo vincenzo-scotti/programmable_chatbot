@@ -133,7 +133,7 @@ def init_environment(config_file_path: str):
     logging.info(f"Mixed precision set to '{mixed_precision}'")
     # Check for gradient checkpointing
     checkpoint_gradient = configs.get('checkpoint_gradient', checkpoint_gradient)
-    logging.info(f"Gradient checkpointing set to {checkpoint_gradient}")
+    logging.info(f"Gradient checkpointing set to '{checkpoint_gradient}'")
     # Load remaining configs
     chatbot_configs = configs['chatbot']
     model_configs = configs['gpt2']['model']
@@ -246,7 +246,7 @@ def training_step(train_batch, loss_weight: float = 1.0, update: bool = True) ->
     # Process mini-batch
     with torch.autocast(device.type, enabled=mixed_precision):
         # Process current elements
-        logits = model(**input_encodings, use_cache=checkpoint_gradient).logits
+        logits = model(**input_encodings, use_cache=not checkpoint_gradient).logits
         # Compute loss
         loss = nll(logits, labels, reduction='mean')
         # Scale loss is required
@@ -512,7 +512,7 @@ def evaluate():
     # Get current date and time
     end_time: datetime = datetime.now()
     # Log end of training
-    logging.info(f"Training finished - Current date and time {end_time}")
+    logging.info(f"Testing finished - Current date and time {end_time}")
     logging.info(f"Elapsed time {end_time - start_time}")
 
     return
@@ -522,7 +522,7 @@ def main(args: Namespace):
     # Prepare environment
     init_environment(args.config_file_path)
     # Run training and validation
-    # fit()
+    fit()
     # Run tests
     evaluate()
 

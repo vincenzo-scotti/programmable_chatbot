@@ -106,6 +106,7 @@ class Chatbot:
         ellipsis_len: int = len(self.tokenizer('...\n\n').input_ids)
         utterances_len = []
         context_len = 0
+        context_idx = 0
         # Perplexity accumulator
         ppl = []
         # Iterate over utterances
@@ -113,13 +114,12 @@ class Chatbot:
             # Encode current prompt-utterance pair
             utterance_input_ids, utterance_attention_mask = self.tokenizer(f'{prompt} {utterance}', return_tensors='pt').to(self.device).values()
             # Get current response length
-            utterances_len.append(utterance_input_ids.size(0))
+            utterances_len.append(utterance_input_ids.size(1))
             # Get current prompt length
             prompt_length = len(self.tokenizer(prompt))
             # Check if maximum length was reached and reset past
-            if attention_mask.size(0) + utterances_len[-1] > self.tokenizer.model_max_length:
+            if attention_mask.size(1) + utterances_len[-1] > self.tokenizer.model_max_length:
                 #
-                context_idx = 0
                 while context_idx < idx and context_len + ellipsis_len + task_description_len + utterances_len[-1] > self.tokenizer.model_max_length:
                     context_len -= utterances_len[context_idx]
                     context_idx += 1
@@ -132,22 +132,25 @@ class Chatbot:
                 attention_mask = context_encodings.attention_mask
                 past_key_values = self.model.transformer(**context_encodings).past_key_values
             # Get maximum response length
-            max_response_len = self.tokenizer.model_max_length - attention_mask.size(0)
+            max_response_len = self.tokenizer.model_max_length - attention_mask.size(1)
             # Target labels (they will be shifted automatically by NLL computation)
             labels = utterance_input_ids[:, prompt_length:max_response_len].clone()
             labels[~utterance_attention_mask[:, prompt_length:max_response_len].bool()] = IGNORE_INDEX
             # Get model predictions
-            print(utterance_input_ids.size(), attention_mask.size(), utterance_attention_mask.size(), past_key_values[0][0].size())
             output = self.model(
-                input_ids=utterance_input_ids[:max_response_len],
-                attention_mask=torch.hstack([attention_mask, utterance_attention_mask[:max_response_len]]),
+                input_ids=utterance_input_ids[:, :max_response_len],
+                attention_mask=torch.hstack([attention_mask, utterance_attention_mask[:, :max_response_len]]),
                 past_key_values=past_key_values
             )
             logits = output.logits[:, prompt_length:]
             # Compute sequence PPL
             ppl.append(self._nll(logits, labels, reduction='seqmean').squeeze().exp())
+            # Update cache
+            past_key_values = output.past_key_values
             # Update attention mask
             attention_mask = torch.hstack([attention_mask, utterance_attention_mask])
+            # Update context length
+            context_len += utterances_len[-1]
         # Gather perplexities from device
         ppl = [score.item() for score in ppl]
 
@@ -184,7 +187,7 @@ class Chatbot:
             # Get current prompt length
             prompt_length = len(self.tokenizer(passage["context_response"]))
             # Get maximum response length
-            max_response_len = self.tokenizer.model_max_length - attention_mask.size(0)
+            max_response_len = self.tokenizer.model_max_length - attention_mask.size(1)
             # Target labels (they will be shifted automatically by NLL computation)
             labels = input_ids[:, prompt_length:max_response_len].clone()
             labels[~attention_mask[:, prompt_length:max_response_len].bool()] = IGNORE_INDEX
@@ -217,7 +220,7 @@ class Chatbot:
         return ppl_score, support
 
     def predict_global_label(self, approach: Literal['posterior', 'infilling'], **kwargs) -> Tuple[int, int]:
-        assert approach == 'infilling' or approach == 'infilling', f'Unsupported label type: \'{approach}\''
+        assert approach == 'infilling' or approach == 'posterior', f'Unsupported label type: \'{approach}\''
         # Accumulator for logits
         cls_logits = torch.empty(0, dtype=torch.float, device=self.device)
         # Encode common prefix
@@ -295,7 +298,7 @@ class Chatbot:
             # Iterate over passages to label
             for passage in kwargs['passages']:
                 # Current logits accumulator
-                tmp_cls_logits = torch.empty(0)
+                tmp_cls_logits = torch.empty(0, dtype=torch.float, device=self.device)
                 # Encode current passage
                 passage_input_ids, passage_attention_mask = self.tokenizer(
                     passage['context_response'], return_tensors='pt', padding=True
@@ -315,7 +318,7 @@ class Chatbot:
                 # Iterate over batches of annotations
                 for s_idx in range(0, len(passage['annotations']), in_mem):
                     # Get last index
-                    e_idx = min(s_idx + in_mem, len(kwargs['annotations']))
+                    e_idx = min(s_idx + in_mem, len(passage['annotations']))
                     # Prepare current inputs
                     input_ids, attention_mask = self.tokenizer(
                         passage['annotations'][s_idx:e_idx], return_tensors='pt', padding=True
@@ -350,26 +353,32 @@ class Chatbot:
             past_attention_mask = tmp_attention_mask = prefix_encodings.attention_mask
             past_key_values = tmp_past_key_values = self.model.transformer(**prefix_encodings).past_key_values
             # Parameters
-            prefix_len: int = prefix_encodings.input_ids(1)
+            prefix_len: int = prefix_encodings.input_ids.size(1)
             ellipsis_len: int = len(self.tokenizer('...\n\n').input_ids)
             utterances_len = []
             context_len = 0
             utterances = []
+            context_idx = 0
             # Iterate over utterances to label
             for idx, utterance in enumerate(kwargs['utterances']):
+                # Target label
+                try:
+                    y_true.append(
+                        [utterance['target'] in prompt for prompt in utterance['prompts']].index(True))
+                except ValueError:
+                    y_true.append(-1)
                 # Current logits accumulator
-                tmp_cls_logits = torch.empty(0)
+                tmp_cls_logits = torch.empty(0, dtype=torch.float, device=self.device)
                 # Encode correct prompt and utterance to compose context
                 utterances.append((utterance["prompts"][y_true[-1]], utterance["text"]))
                 utterance_input_ids, utterance_attention_mask = self.tokenizer(
                     f'{utterance["prompts"][y_true[-1]]} {utterance["text"]}', return_tensors='pt', padding=True
                 ).to(self.device).values()
                 # Get current response length
-                utterances_len.append(utterance_input_ids.size(0))
+                utterances_len.append(utterance_input_ids.size(1))
                 # Check if maximum length was reached and reset past
-                if tmp_attention_mask.size(0) + utterances_len[-1] > self.tokenizer.model_max_length:
+                if tmp_attention_mask.size(1) + utterances_len[-1] > self.tokenizer.model_max_length:
                     #
-                    context_idx = 0
                     while context_idx < idx and context_len + ellipsis_len + prefix_len + utterances_len[-1] > self.tokenizer.model_max_length:
                         context_len -= utterances_len[context_idx]
                         context_idx += 1
@@ -382,23 +391,17 @@ class Chatbot:
                     tmp_attention_mask = torch.hstack([past_attention_mask, context_attention_mask])
                     tmp_past_key_values = self.model.transformer(
                         input_ids=context_input_ids,
-                        attention_mask=torch.hstack([past_key_values, context_attention_mask]),
-                        past_key_values=tmp_past_key_values
+                        attention_mask=tmp_attention_mask,
+                        past_key_values=past_key_values
                     ).past_key_values
                 # Get maximum response length
-                max_response_len = self.tokenizer.model_max_length - tmp_attention_mask.size(0)
+                max_response_len = self.tokenizer.model_max_length - tmp_attention_mask.size(1)
                 # Update past key values
                 cache = self.model.transformer(
-                    input_ids=utterance_input_ids,
-                    attention_mask=torch.hstack([tmp_attention_mask, utterance_attention_mask]),
+                    input_ids=utterance_input_ids[:, :max_response_len],
+                    attention_mask=torch.hstack([tmp_attention_mask, utterance_attention_mask[:, :max_response_len]]),
                     past_key_values=tmp_past_key_values
                 ).past_key_values
-                # Target label
-                try:
-                    y_true.append(
-                        [utterance['target'] in prompt for prompt in utterance['prompts']].index(True))
-                except ValueError:
-                    y_true.append(-1)
                 # Get in memory elements
                 in_mem = self.in_mem if self.in_mem is not None else len(utterance['prompts'])
                 # Iterate over batches of annotations
@@ -419,6 +422,7 @@ class Chatbot:
                     # Target labels (they will be shifted automatically by NLL computation)
                     labels = input_ids.clone()
                     labels[~attention_mask.bool()] = IGNORE_INDEX
+                    labels = labels[:, :max_response_len]
                     # Prepare past
                     past = tuple(
                         (k.repeat(e_idx - s_idx, 1, 1, 1), v.repeat(e_idx - s_idx, 1, 1, 1))
@@ -427,8 +431,8 @@ class Chatbot:
                     past_attention = tmp_attention_mask.repeat(e_idx - s_idx, 1)
                     # Get model predictions
                     output = self.model(
-                        input_ids=input_ids,
-                        attention_mask=torch.hstack([past_attention, attention_mask]),
+                        input_ids=input_ids[:, :max_response_len],
+                        attention_mask=torch.hstack([past_attention, attention_mask[:, :max_response_len]]),
                         past_key_values=past
                     )
                     # Get raw token scores
@@ -440,14 +444,15 @@ class Chatbot:
                 # Update accumulators
                 tmp_attention_mask = torch.hstack([tmp_attention_mask, utterance_attention_mask])
                 tmp_past_key_values = cache
+                context_len += utterances_len[-1]
         else:
             raise ValueError(f'Unsupported label type: \'{approach}\'')
         # Exp-normalisation
         # cls_logits -= cls_logits.max(dim=1)
         # Predict class as argmax
-        y_pred = torch.argmax(cls_logits, dim=1).item()
+        y_pred = torch.argmax(cls_logits, dim=1).view(-1).tolist()
 
-        return list(*zip(y_true, y_pred))
+        return list(zip(y_true, y_pred))
 
     def predict_label(
             self,
@@ -471,8 +476,11 @@ class Chatbot:
     ) -> Dict:
         with torch.no_grad(), torch.autocast(self.device.type, enabled=self.mixed_precision):
             # Compute the target and predicted labels for each sample
-            y_true, y_pred = list(zip(*[sum(
+            y_true, y_pred = list(zip(*sum(
                 (self.predict_label(label_type, approach, **sample, **kwargs) for sample in samples), list()
-            )]))
+            )))
+
+            y_true = np.array(y_true)
+            y_pred = np.array(y_pred)
 
         return classification_report(y_true, y_pred, output_dict=True)
