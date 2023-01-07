@@ -713,9 +713,9 @@ class IEMOCAP(_DialogueCorpus):
         # Build dictionary
         parsed_data = {
             'emotion': self.CATEGORICAL_EMOTION_DECODER.get(emotion, 'neutral state'),
-            'valence': self.LINE_LABELS_METADATA['valence']['values'][max(0, int(math.ceil(float(valence))) - 1)],
-            'activation': self.LINE_LABELS_METADATA['activation']['values'][max(0, int(math.ceil(float(valence))) - 1)],
-            'dominance': self.LINE_LABELS_METADATA['dominance']['values'][max(0, int(math.ceil(float(valence))) - 1)]
+            'valence': self.LINE_LABELS_METADATA['valence']['values'][min(4, max(0, int(math.ceil(float(valence))) - 1))],
+            'activation': self.LINE_LABELS_METADATA['activation']['values'][min(4, max(0, int(math.ceil(float(activation))) - 1))],
+            'dominance': self.LINE_LABELS_METADATA['dominance']['values'][min(4, max(0, int(math.ceil(float(dominance))) - 1))]
         }
 
         return parsed_data
