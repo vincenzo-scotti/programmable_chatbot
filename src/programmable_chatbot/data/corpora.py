@@ -642,7 +642,7 @@ class IEMOCAP(_DialogueCorpus):
         },
         'valence': {
             'id': 'valence',
-            'description': 'The valence (or appraisal) describes describes the extent to which '
+            'description': 'The valence (or appraisal) describes the extent to which '
                            'an emotion is pleasant or unpleasant. '
                            'Valence is one of the possible dimensions of the emotion space and can be '
                            'recognised by what a speaker is saying.',

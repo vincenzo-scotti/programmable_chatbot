@@ -238,7 +238,7 @@ class Chatbot:
                 y_true = [kwargs['target'] in annotation for annotation in kwargs['annotations']].index(True)
             else:
                 y_true = [kwargs['target'] in starter for starter in kwargs['starter']].index(True)
-        except ValueError:
+        except:
             y_true = -1
         # Get in memory elements
         in_mem = self.in_mem if self.in_mem is not None else len(kwargs['annotations' if approach == 'posterior' else 'starter'])
@@ -311,8 +311,8 @@ class Chatbot:
                 # Target label
                 try:
                     y_true.append([passage['target'] in annotation for annotation in passage['annotations']].index(True))
-                except ValueError:
-                    y_true.append(-1)
+                except:
+                    y_true = -1
                 # Get in memory elements
                 in_mem = self.in_mem if self.in_mem is not None else len(passage['annotations'])
                 # Iterate over batches of annotations
@@ -365,7 +365,7 @@ class Chatbot:
                 try:
                     y_true.append(
                         [utterance['target'] in prompt for prompt in utterance['prompts']].index(True))
-                except ValueError:
+                except:
                     y_true.append(-1)
                 # Current logits accumulator
                 tmp_cls_logits = torch.empty(0, dtype=torch.float, device=self.device)
@@ -482,5 +482,9 @@ class Chatbot:
 
             y_true = np.array(y_true)
             y_pred = np.array(y_pred)
+            # Remove missing labels
+            mask = y_true != -1
+            y_true = y_true[mask]
+            y_pred = y_pred[mask]
 
         return classification_report(y_true, y_pred, output_dict=True)
