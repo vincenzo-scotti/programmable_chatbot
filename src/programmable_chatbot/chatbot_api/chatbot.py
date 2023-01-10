@@ -187,17 +187,18 @@ class Chatbot:
             # Get current prompt length
             prompt_length = len(self.tokenizer(passage["context_response"]))
             # Get maximum response length
-            max_response_len = self.tokenizer.model_max_length - attention_mask.size(1)
+            max_completion_len = self.tokenizer.model_max_length - past_attention_mask.size(1)
             # Target labels (they will be shifted automatically by NLL computation)
-            labels = input_ids[:, prompt_length:max_response_len].clone()
-            labels[~attention_mask[:, prompt_length:max_response_len].bool()] = IGNORE_INDEX
+            labels = input_ids.clone()
+            labels[~attention_mask.bool()] = IGNORE_INDEX
+            labels = labels[:, prompt_length:max_completion_len]
             # Get model predictions
             output = self.model(
-                input_ids=input_ids,
-                attention_mask=torch.hstack([past_attention_mask, attention_mask]),
+                input_ids=input_ids[:, prompt_length:max_completion_len],
+                attention_mask=torch.hstack([past_attention_mask, attention_mask[:, prompt_length:max_completion_len]]),
                 past_key_values=past_key_values
             )
-            logits = output.logits[:, prompt_length:]
+            logits = output.logits
             # Compute sequence PPL
             ppl.append(self._nll(logits, labels, reduction='seqmean').squeeze().exp())
         # Gather perplexities from device
@@ -308,11 +309,13 @@ class Chatbot:
                 tmp_past_key_values = self.model.transformer(
                     input_ids=passage_input_ids, attention_mask=tmp_attention_mask, past_key_values=past_key_values
                 ).past_key_values
+                # Get maximum copmletion length
+                max_completion_len = self.tokenizer.model_max_length - tmp_attention_mask.size(1)
                 # Target label
                 try:
                     y_true.append([passage['target'] in annotation for annotation in passage['annotations']].index(True))
                 except:
-                    y_true = -1
+                    y_true.append(-1)
                 # Get in memory elements
                 in_mem = self.in_mem if self.in_mem is not None else len(passage['annotations'])
                 # Iterate over batches of annotations
@@ -326,6 +329,7 @@ class Chatbot:
                     # Target labels (they will be shifted automatically by NLL computation)
                     labels = input_ids.clone()
                     labels[~attention_mask.bool()] = IGNORE_INDEX
+                    labels = labels[:, :max_completion_len]
                     # Prepare past
                     past = tuple(
                         (k.repeat(e_idx - s_idx, 1, 1, 1), v.repeat(e_idx - s_idx, 1, 1, 1))
@@ -334,8 +338,8 @@ class Chatbot:
                     past_attention = tmp_attention_mask.repeat(e_idx - s_idx, 1)
                     # Get model predictions
                     output = self.model(
-                        input_ids=input_ids,
-                        attention_mask=torch.hstack([past_attention, attention_mask]),
+                        input_ids=input_ids[:, :max_completion_len],
+                        attention_mask=torch.hstack([past_attention, attention_mask[:, :max_completion_len]]),
                         past_key_values=past
                     )
                     # Get raw token scores
@@ -363,8 +367,7 @@ class Chatbot:
             for idx, utterance in enumerate(kwargs['utterances']):
                 # Target label
                 try:
-                    y_true.append(
-                        [utterance['target'] in prompt for prompt in utterance['prompts']].index(True))
+                    y_true.append([utterance['target'] in prompt for prompt in utterance['prompts']].index(True))
                 except:
                     y_true.append(-1)
                 # Current logits accumulator

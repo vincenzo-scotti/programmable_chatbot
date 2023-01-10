@@ -693,9 +693,25 @@ class IEMOCAP(_DialogueCorpus):
 
     def _parse_line(self, raw_data) -> Dict[str, str]:
         # Split expression with regex
-        identifier, *_, text = self.LINE_REGEX.findall(raw_data)[0]
+        line, transcript, session, session_type, _, speaker_gender, text = self.LINE_REGEX.findall(raw_data)[0]
+        # Audio file path
+        audio_file = os.path.join(
+            self.IDENTIFIER,
+            f"Session{int(session)}",
+            'sentences',
+            'wav',
+            transcript,
+            f"{line}.wav"
+        )
         # Build dictionary
-        parsed_data = {'text': text, 'id': identifier}
+        parsed_data = {
+            'text': text,
+            'line_id': line,
+            'transcript_is': transcript,
+            'session_type': session_type,
+            'speaker_gender': speaker_gender,
+            'audio_file': audio_file
+        }
 
         return parsed_data
 
@@ -751,7 +767,11 @@ class IEMOCAP(_DialogueCorpus):
             'split': self.split,
             'corpus': 'IEMOCAP',
             'utterances': [
-                {'text': self._preprocess_text(utterance['text']), **annotations[utterance['id']]}
+                {
+                    'text': self._preprocess_text(utterance['text']),
+                    'audio_file': utterance['audio_file'],
+                    **annotations[utterance['line_id']]
+                }
                 for utterance in dialogue
             ]
         }
@@ -1630,7 +1650,7 @@ class EPITOME(_DialogueCorpus):
             'description': 'Emotional reaction is a communication mechanism of empathy. '
                            'Having an emotional reaction means expressing emotions such as warmth, '
                            'compassion, and concern. Expressing these emotions plays an important role '
-                           'in establishing empathic rapport and support',
+                           'in establishing empathetic rapport and support',
             'values': ['no communication', 'weak communication', 'strong communication'],
             'explained': True
         },

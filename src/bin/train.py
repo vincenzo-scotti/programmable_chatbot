@@ -522,7 +522,7 @@ def main(args: Namespace):
     # Prepare environment
     init_environment(args.config_file_path)
     # Run training and validation
-    fit()
+    # fit()
     # Run tests
     evaluate()
 
