@@ -62,17 +62,13 @@ corpus:
 optimizer:
   kwargs:
     lr: 1.e-5
-  n_epochs: 4
+  n_epochs: 20
   accumulation_steps: 16
   max_gradient_norm: 1.0
-# LR scheduler
-lr_scheduler:
-  warmup: 0.05
 # Early stopping
 early_stopping:
   patience: 5
   min_improvement: 1.e-3
 # Evaluation
 evaluation:
-  validation_period: 4096
   logging_period: 16
