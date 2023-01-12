@@ -14,6 +14,7 @@ class Chatbot:
             model: Union[str, GPT2LMHeadModel],
             tokenizer: Optional[Union[str, GPT2Tokenizer]] = None,
             max_response_length: Optional[int] = None,
+            max_context_utterances: Optional[int] = None,
             device: Optional[torch.device] = None,
             mixed_precision: bool = True,
             in_mem: Optional[int] = None
@@ -23,19 +24,129 @@ class Chatbot:
         )
         self.model = model if isinstance(model, GPT2LMHeadModel) else GPT2LMHeadModel.from_pretrained(model)
         self.model.to(device)
-        self.tokenizer = GPT2Tokenizer.from_pretrained(tokenizer) if isinstance(tokenizer, str) else tokenizer
-        self.max_response_length: Optional[int] = max_response_length
+        self.tokenizer = GPT2Tokenizer.from_pretrained(
+            tokenizer, pad_token='<|endoftext|>'
+        ) if isinstance(tokenizer, str) else tokenizer
+        self.max_response_length: int = max_response_length if max_response_length is not None else 256
+        self.max_context_utterances: int = max_context_utterances if max_context_utterances is not None else 3
         self.mixed_precision: bool = mixed_precision
         self.in_mem: Optional[int] = in_mem
 
     def __call__(self, *args, **kwargs):
         ...
 
-    def generate(self, context: str) -> str:
-        ...
+    def generate(
+            self,
+            context: List[str],  # NOTE context tokens lines are expected to end with '\n'
+            prompt: str = '',
+            task_description: Optional[str] = None,
+            global_labels: Optional[str] = None,
+            **kwargs
+    ) -> str:  # TODO extend to handle better local labels
+        dialogue = ''
+        if task_description is not None:
+            dialogue += task_description + '\n\n'
+        if global_labels is not None:
+            dialogue += global_labels + '\n\n'
 
-    def label_utterance(self):
-        ...
+        if len(dialogue) > 0:
+            dialogue_len_tok = len(self.tokenizer(dialogue))
+        else:
+            dialogue_len_tok = 0
+
+        ellipsis = '...\n\n'
+        ellipsis_len_tok = len(self.tokenizer(ellipsis))
+
+        context_utterances_len_tok = [len(self.tokenizer(utterance)) for utterance in context]
+        context_len_tok = sum(context_utterances_len_tok)
+
+        max_response_length = self.max_response_length - (len(self.tokenizer(prompt)) if len(prompt) > 0 else 0)
+        max_context_len = self.tokenizer.model_max_length - max_response_length - dialogue_len_tok
+
+        if context_len_tok > max_context_len:
+            dialogue += ellipsis
+            max_context_len = self.tokenizer.model_max_length - max_response_length - dialogue_len_tok - ellipsis_len_tok
+            idx = 0
+            while context_len_tok > max_context_len:
+                context_len_tok -= context_utterances_len_tok[idx]
+                idx += 1
+            context = context[idx:]
+        dialogue += ''.join(context + [prompt])
+
+        with torch.no_grad(), torch.autocast(self.device.type, enabled=self.mixed_precision):
+            input_ids = self.tokenizer(dialogue, return_tensors='pt').input_ids.to(self.device)
+            response = self.tokenizer.decode(
+                self.model.generate(input_ids, **kwargs)[0, input_ids.size(1):]
+            )
+
+        response, *_ = response.split('\n', 1)
+
+        return response
+
+    def label_utterance(  # NOTE only one label at the time and only with targets is supported for now
+            self,
+            context: List[str],
+            response: Union[str, Dict[str, Tuple[List[str], str]]],
+            label: str,
+            label_values: List[str],
+            approach: Literal['posterior', 'infilling', 'prediction'],
+            task_description: Optional[str] = None,
+    ):  # TODO manage possible length issue
+        if approach == 'posterior':
+            # Encode common prefix
+            prefix_encodings = self.tokenizer(
+                f'{task_description}\n\n'
+                f'Context:\n\n{"".join(context[-self.max_context_utterances:])}\n\n'
+                f'Response:\n\n{response}\n\n' if len(context) > 0 else
+                f'{task_description}\n\nResponse:\n\n{response}\n\n'
+                , return_tensors='pt'
+            ).to(self.device)
+            # Prepare accumulators
+            past_attention_mask = prefix_encodings.attention_mask
+            past_key_values = self.model.transformer(**prefix_encodings).past_key_values
+            # Logits accumulator
+            cls_logits = torch.empty(0, dtype=torch.float, device=self.device)
+            # Get maximum completion length
+            max_completion_len = self.tokenizer.model_max_length - past_attention_mask.size(1)
+            # Get in memory elements
+            in_mem = self.in_mem if self.in_mem is not None else len(label_values)
+            # Iterate over batches of annotations
+            for s_idx in range(0, len(label_values), in_mem):
+                # Get last index
+                e_idx = min(s_idx + in_mem, len(label_values))
+                # Prepare current inputs
+                input_ids, attention_mask = self.tokenizer(
+                    [f'{label}: {label_values[idx]}{self.tokenizer.eos_token}' for idx in range(s_idx, e_idx)],
+                    return_tensors='pt', padding=True
+                ).to(self.device).values()
+                # Target labels (they will be shifted automatically by NLL computation)
+                labels = input_ids.clone()
+                labels[~attention_mask.bool()] = IGNORE_INDEX
+                labels = labels[:, :max_completion_len]
+                # Prepare past
+                past = tuple(
+                    (k.repeat(e_idx - s_idx, 1, 1, 1), v.repeat(e_idx - s_idx, 1, 1, 1))
+                    for (k, v) in past_key_values
+                )
+                past_attention = past_attention_mask.repeat(e_idx - s_idx, 1)
+                # Get model predictions
+                output = self.model(
+                    input_ids=input_ids[:, :max_completion_len],
+                    attention_mask=torch.hstack([past_attention, attention_mask[:, :max_completion_len]]),
+                    past_key_values=past
+                )
+                # Get raw token scores
+                gen_logits = output.logits
+                # Compute sequence cumulative log-likelihood # NOTE the minus sign
+                cls_logits = torch.hstack([cls_logits, - self._nll(gen_logits, labels, reduction='seqsum')])
+        elif approach == 'infilling' or approach == 'prediction':
+            raise NotImplementedError()
+        else:
+            raise ValueError(f'Unsupported label type: \'{approach}\'')
+        # Convert to string
+        y_pred = label_values[torch.argmax(cls_logits).squeeze().item()]
+
+        return y_pred
 
     def label_dialogue(self):
         ...
