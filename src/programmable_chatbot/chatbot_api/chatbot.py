@@ -117,7 +117,7 @@ class Chatbot:
                 e_idx = min(s_idx + in_mem, len(label_values))
                 # Prepare current inputs
                 input_ids, attention_mask = self.tokenizer(
-                    [f'{label}: {label_values[idx]}{self.tokenizer.eos_token}' for idx in range(s_idx, e_idx)],
+                    [f'{label}: {label_values[idx]}.{self.tokenizer.eos_token}' for idx in range(s_idx, e_idx)],
                     return_tensors='pt', padding=True
                 ).to(self.device).values()
                 # Target labels (they will be shifted automatically by NLL computation)
