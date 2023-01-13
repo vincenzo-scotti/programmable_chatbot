@@ -102,7 +102,24 @@ The API uses the base [GPT-2](https://huggingface.co/docs/transformers/model_doc
 Here follows a usage example
 
 ```python
-...
+from programmable_chatbot.chatbot_api import Chatbot
+
+
+chatbot = Chatbot('./resources/models/ppm_dlm/', 'gpt2')
+
+task = 'The following is a therapy session between an intelligent AI agent, called AI, and a human, called User.\n\n' \
+       'In the following interactions, AI and User will converse in natural language.'
+dialogue_context = [
+  "AI: Hello, how are you doing today?\n"
+  "User: I'm doing fine. Can you help me?\n"
+]
+prompt = 'AI:'
+
+generate_kwargs = {
+    'top_p': 1.0, 'top_k': 0, 'temperature': 0.95, 'do_sample': True, 'max_new_tokens': 64
+}
+
+response = chatbot.generate(dialogue_context, prompt=prompt, task_description=task, **generate_kwargs)
 ```
 
 ## References

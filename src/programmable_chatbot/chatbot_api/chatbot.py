@@ -23,7 +23,7 @@ class Chatbot:
             torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
         )
         self.model = model if isinstance(model, GPT2LMHeadModel) else GPT2LMHeadModel.from_pretrained(model)
-        self.model.to(device)
+        self.model = self.model.eval().to(self.device)
         self.tokenizer = GPT2Tokenizer.from_pretrained(
             tokenizer, pad_token='<|endoftext|>'
         ) if isinstance(tokenizer, str) else tokenizer
@@ -50,17 +50,17 @@ class Chatbot:
             dialogue += global_labels + '\n\n'
 
         if len(dialogue) > 0:
-            dialogue_len_tok = len(self.tokenizer(dialogue))
+            dialogue_len_tok = len(self.tokenizer(dialogue).input_ids)
         else:
             dialogue_len_tok = 0
 
         ellipsis = '...\n\n'
-        ellipsis_len_tok = len(self.tokenizer(ellipsis))
+        ellipsis_len_tok = len(self.tokenizer(ellipsis).input_ids)
 
-        context_utterances_len_tok = [len(self.tokenizer(utterance)) for utterance in context]
+        context_utterances_len_tok = [len(self.tokenizer(utterance).input_ids) for utterance in context]
         context_len_tok = sum(context_utterances_len_tok)
 
-        max_response_length = self.max_response_length - (len(self.tokenizer(prompt)) if len(prompt) > 0 else 0)
+        max_response_length = self.max_response_length - (len(self.tokenizer(prompt).input_ids) if len(prompt) > 0 else 0)
         max_context_len = self.tokenizer.model_max_length - max_response_length - dialogue_len_tok
 
         if context_len_tok > max_context_len:
@@ -76,10 +76,11 @@ class Chatbot:
         with torch.no_grad(), torch.autocast(self.device.type, enabled=self.mixed_precision):
             input_ids = self.tokenizer(dialogue, return_tensors='pt').input_ids.to(self.device)
             response = self.tokenizer.decode(
-                self.model.generate(input_ids, **kwargs)[0, input_ids.size(1):]
+                self.model.generate(input_ids, **kwargs)[0, input_ids.size(1):], skip_special_tokens=True
             )
 
         response, *_ = response.split('\n', 1)
+        response = response.strip()
 
         return response
 
@@ -227,7 +228,7 @@ class Chatbot:
             # Get current response length
             utterances_len.append(utterance_input_ids.size(1))
             # Get current prompt length
-            prompt_length = len(self.tokenizer(prompt))
+            prompt_length = len(self.tokenizer(prompt).input_ids)
             # Check if maximum length was reached and reset past
             if attention_mask.size(1) + utterances_len[-1] > self.tokenizer.model_max_length:
                 #
@@ -296,7 +297,7 @@ class Chatbot:
                 f'{passage["context_response"]}{passage["explanation"]}', return_tensors='pt'
             ).to(self.device).values()
             # Get current prompt length
-            prompt_length = len(self.tokenizer(passage["context_response"]))
+            prompt_length = len(self.tokenizer(passage["context_response"]).input_ids)
             # Get maximum response length
             max_completion_len = self.tokenizer.model_max_length - past_attention_mask.size(1)
             # Target labels (they will be shifted automatically by NLL computation)
