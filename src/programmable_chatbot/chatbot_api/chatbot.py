@@ -92,6 +92,7 @@ class Chatbot:
             label_values: List[str],
             approach: Literal['posterior', 'infilling', 'prediction'],
             task_description: Optional[str] = None,
+            output_proba: bool = False
     ):  # TODO manage possible length issue
         if approach == 'posterior':
             # Encode common prefix
@@ -147,7 +148,17 @@ class Chatbot:
         # Convert to string
         y_pred = label_values[torch.argmax(cls_logits).squeeze().item()]
 
-        return y_pred
+        if output_proba:
+            y_proba = {
+                value: proba
+                for value, proba in zip(
+                    label_values,
+                    torch.softmax(cls_logits.squeeze(), dim=0).view(-1).tolist()
+                )
+            }
+            return y_pred, y_proba
+        else:
+            return y_pred
 
     def label_dialogue(self):
         ...
