@@ -1,6 +1,6 @@
 # Programmable Chatbot
 
-Codebase for the paper "[Building Programmable Open-Domain Conversational Agents for Chit-Chat and Mental Healthcare]()". 
+Codebase for the paper "[Prompting for Empathy and Support: Towards Generative Chatbots for Mental Healthcare]()". 
 This repository contains the implementation dialogue language model described in the paper.
 
 ## Repository structure
