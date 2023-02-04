@@ -163,6 +163,16 @@ def configure_model():
         model_configs['pretrained'], **model_configs.get('kwargs', {})
     )
     logging.info("Model instantiated")
+    # Possibly freeze bottom layers:
+    trainable_blocks = model_configs.get('trainable_blocks')
+    if trainable_blocks is not None:
+        # Freeze input embeddings
+        for w in model.transformer.wte.parameters():
+            w.requires_grad = False
+        # Freeze bottom blocks
+        for block in model.transformer.h[:-trainable_blocks]:
+            for w in block.parameters():
+                w.requires_grad = False
     # Possibly enable gradient checkpointing
     if checkpoint_gradient:
         model.gradient_checkpointing_enable()

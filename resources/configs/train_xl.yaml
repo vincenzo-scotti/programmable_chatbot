@@ -1,6 +1,6 @@
 # Main
 experiment_series: PROGCHAT
-experiment_id: gpt2_large  # gpt2_[distilled|small|medium|large]
+experiment_id: gpt2_xl  # gpt2_[distilled|small|medium|large]
 experiments_directory_path: ./experiments/
 
 random_seed: 2307
@@ -15,7 +15,8 @@ log_file: true
 # Neural LM
 gpt2:
   model:
-    pretrained: &pretrained gpt2-large
+    pretrained: &pretrained gpt2-xl
+    trainable_blocks: 12
   tokeniser:
     pretrained: *pretrained
     kwargs:
@@ -23,7 +24,7 @@ gpt2:
 # API
 chatbot:
   kwargs:
-    in_mem: 8
+    in_mem: 2
   generate_kwargs: {}
 # Data set
 corpus:
@@ -49,10 +50,10 @@ corpus:
         holdout: 50
   data_loader:
     train:
-      mini_batch_size: 2
+      mini_batch_size: 1
       n_workers: &train_workers 4
     validation:
-      mini_batch_size: &eval_mini_batch_size 8
+      mini_batch_size: &eval_mini_batch_size 2
       n_workers: &eval_workers 4
     test:
       mini_batch_size: *eval_mini_batch_size
@@ -63,7 +64,7 @@ optimizer:
   kwargs:
     lr: 1.e-5
   n_epochs: 4
-  accumulation_steps: 16
+  accumulation_steps: 32
   max_gradient_norm: 1.0
 # LR scheduler
 lr_scheduler:
