@@ -321,8 +321,8 @@ def fit():
     n_epochs = optimizer_configs.get('n_epochs', 0)
     n_iterations = len(train_corpus_loader)
     n_accumulation = optimizer_configs.get('accumulation_steps', 1)
-    validation_period = int(math.ceil(evaluation_configs.get('validation_period', n_iterations) / n_accumulation))
-    logging_period = int(math.ceil(evaluation_configs.get('logging_period', n_iterations) / n_accumulation))
+    validation_period = evaluation_configs.get('validation_period', int(math.ceil(n_iterations / n_accumulation)))
+    logging_period = evaluation_configs.get('logging_period', int(math.ceil(n_iterations / n_accumulation)))
     best_validation_loss = float('inf')
     # Early stopping
     early_stopping_patience = early_stopping_configs.get('patience')

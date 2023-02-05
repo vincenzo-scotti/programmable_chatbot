@@ -50,10 +50,10 @@ corpus:
         holdout: 50
   data_loader:
     train:
-      mini_batch_size: 1
+      mini_batch_size: 2
       n_workers: &train_workers 4
     validation:
-      mini_batch_size: &eval_mini_batch_size 2
+      mini_batch_size: &eval_mini_batch_size 4
       n_workers: &eval_workers 4
     test:
       mini_batch_size: *eval_mini_batch_size
@@ -64,7 +64,7 @@ optimizer:
   kwargs:
     lr: 1.e-5
   n_epochs: 4
-  accumulation_steps: 32
+  accumulation_steps: 16
   max_gradient_norm: 1.0
 # LR scheduler
 lr_scheduler:
