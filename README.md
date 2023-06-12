@@ -1,7 +1,7 @@
 # Programmable Chatbot
 
-Codebase for the paper "[Prompting for Empathy and Support: Towards Generative Chatbots for Mental Healthcare]()". 
-This repository contains the implementation dialogue language model described in the paper.
+This repository contains the implementation of a chatbot programmable via textual instructions.
+The chatbot was developed as part of a Ph.D. Thesis at Politecnico di Milano ([link](http://hdl.handle.net/10589/202713) to thesis web page).
 
 ## Repository structure
 
@@ -120,12 +120,4 @@ generate_kwargs = {
 }
 
 response = chatbot.generate(dialogue_context, prompt=prompt, task_description=task, **generate_kwargs)
-```
-
-## References
-
-If you are willing to use our code or our models, please cite our work through the following BibTeX entry:
-
-```bibtex
-...
 ```
